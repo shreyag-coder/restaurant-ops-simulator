@@ -155,3 +155,12 @@ def test_list_and_resolve_runs(tmp_path):
     assert resolve_run(tmp_path, "first").name == "first"
     assert resolve_run(tmp_path).name == names[-1]
     assert list_runs(tmp_path / "missing") == []
+
+
+def test_story_run_is_read_only_and_tick_bounded(run_dir, offline):
+    from replay import story_run
+    before = hashes(run_dir)
+    assert "KITCHEN STORY: run r-replay" in story_run(run_dir, at=2)
+    with pytest.raises(ReplayError):
+        story_run(run_dir, at=99)
+    assert hashes(run_dir) == before

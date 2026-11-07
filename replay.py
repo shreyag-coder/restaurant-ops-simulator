@@ -16,11 +16,11 @@ from pathlib import Path
 
 from recording import (CheckpointError, list_snapshot_ticks, load_checkpoint,
                        load_events, load_snapshot)
-from reporting import format_event, render_report
+from reporting import format_event, render_report, render_story
 
 REPORT_EVENT_WINDOW = 40
 
-__all__ = ["ReplayError", "replay_run", "replay_state", "list_runs", "latest_run",
+__all__ = ["ReplayError", "replay_run", "replay_state", "story_run", "list_runs", "latest_run",
            "resolve_run"]
 
 
@@ -125,3 +125,9 @@ def replay_run(run_dir, at=None):
     else:
         lines.append("  (no events)")
     return "\n".join(lines) + "\n"
+
+
+def story_run(run_dir, at=None):
+    """Conversational story of a committed run, through tick ``at``.  Read-only."""
+    state, events = replay_state(run_dir, at)
+    return render_story(state, events)

@@ -74,6 +74,12 @@ def _records(rows, label):
     return result
 
 
+def _multiplier(value):
+    """Validate a duration multiplier (0.25 = 4x faster ... 5 = 5x slower)."""
+    _require(_number(value, True) and 0.25 <= value <= 5, "Multiplier must be a number from 0.25 to 5")
+    return value
+
+
 def _item_key(item):
     return (item.get("recipe_id", item.get("recipe")), tuple(sorted(item.get("modifiers", []))))
 
@@ -137,6 +143,7 @@ def create_state(config, mode, run_id=None, model=None, personas=None):
         "workers": workers, "stations": stations, "ingredients": ingredients,
         "orders": orders, "tasks": {}, "produced_items": {},
         "scenario_events": events, "applied_events": [], "blockers": {},
+        "operator_queue": [], "announcements": [], "incidents": {},
         "last_event_seq": 0, "last_committed_seq": 0, "recent_events": [],
         "continuation": {"phase": "begin"},
     }
@@ -152,6 +159,10 @@ class SimulationEngine:
         self.build_worker_view = build_worker_view
         self.choose_decision = choose_decision
         self.pending_events = []
+        # Older checkpoints predate live operator commands.
+        self.state.setdefault("operator_queue", [])
+        self.state.setdefault("announcements", [])
+        self.state.setdefault("incidents", {})
 
     def snapshot(self):
         return copy.deepcopy(self.state)
@@ -272,7 +283,8 @@ class SimulationEngine:
                 return reject("Station is unavailable or full")
             # Decimal text avoids float artifacts such as ceil(10 * 1.1) = 12.
             duration = math.ceil(Fraction(str(task["base_minutes"]))
-                                 * Fraction(str(worker["skills"][task["required_skill"]])))
+                                 * Fraction(str(worker["skills"][task["required_skill"]]))
+                                 * Fraction(str(station.get("duration_multiplier", 1))))
             # All checks precede all resource mutations. Only this process writes.
             for key, n in task["ingredients"].items():
                 s["ingredients"][key]["available"] -= n
@@ -303,6 +315,298 @@ class SimulationEngine:
             task.update(status="pending", worker_id=None, started_at=None, finishes_at=None)
             self._emit("task_interrupted", worker_id=worker_id, task_id=task["id"])
         self._emit("worker_availability", worker_id=worker_id, available=available)
+
+    # ------------------------------------------------------------------
+    # Live operator commands (kitchen manager), applied at the next tick.
+    # ------------------------------------------------------------------
+
+    def queue_command(self, command):
+        """Validate an operator command and queue it for the next minute.
+
+        Commands: {"type": "station", "station_id", "available"},
+        {"type": "worker", "worker_id", "available"},
+        {"type": "stock", "ingredient_id", "mode": "set"|"add", "amount"},
+        {"type": "announce", "text"},
+        {"type": "station_capacity", "station_id", "capacity"},
+        {"type": "station_speed", "station_id", "multiplier"} (task duration x),
+        {"type": "worker_skill", "worker_id", "skill", "multiplier" | "remove": true}
+            (existing skills only -- never grants a new qualification),
+        {"type": "add_order", "items": [{recipe, quantity, modifiers}], "deadline_minutes"},
+        {"type": "order_deadline", "order_id", "deadline_minutes"},
+        {"type": "scenario_note", "text", "summary", "model", "latency_ms", "changes"},
+        {"type": "incident", "name", "active", "station_ids", "text"} -- a
+        kitchen-wide event (fire alarm, power cut) that takes the listed
+        stations out of service; clearing it restores only the stations the
+        incident itself took down.  Raises ValueError if invalid.
+        """
+        s = self.state
+        _require(s["status"] not in TERMINAL, "The run has already finished")
+        _require(isinstance(command, dict), "Command must be a dictionary")
+        kind = command.get("type")
+        if kind == "station":
+            _require(command.get("station_id") in s["stations"], "Unknown station")
+            _require(type(command.get("available")) is bool, "Station availability must be boolean")
+            normalized = {"type": kind, "station_id": command["station_id"], "available": command["available"]}
+        elif kind == "worker":
+            _require(command.get("worker_id") in s["workers"], "Unknown worker")
+            _require(type(command.get("available")) is bool, "Worker availability must be boolean")
+            normalized = {"type": kind, "worker_id": command["worker_id"], "available": command["available"]}
+        elif kind == "stock":
+            _require(command.get("ingredient_id") in s["ingredients"], "Unknown ingredient")
+            _require(command.get("mode") in {"set", "add"}, "Stock mode must be set or add")
+            amount = command.get("amount")
+            _require(type(amount) is int, "Stock amount must be an integer")
+            _require(command["mode"] == "add" or amount >= 0, "Stock cannot be negative")
+            normalized = {"type": kind, "ingredient_id": command["ingredient_id"],
+                          "mode": command["mode"], "amount": amount}
+        elif kind == "station_capacity":
+            _require(command.get("station_id") in s["stations"], "Unknown station")
+            capacity = command.get("capacity")
+            _require(type(capacity) is int and 0 <= capacity <= 10, "Capacity must be an integer 0-10")
+            normalized = {"type": kind, "station_id": command["station_id"], "capacity": capacity}
+        elif kind == "station_speed":
+            _require(command.get("station_id") in s["stations"], "Unknown station")
+            normalized = {"type": kind, "station_id": command["station_id"],
+                          "multiplier": _multiplier(command.get("multiplier"))}
+        elif kind == "worker_skill":
+            worker = s["workers"].get(command.get("worker_id"))
+            _require(worker is not None, "Unknown worker")
+            skill = command.get("skill")
+            _require(skill in worker["skills"],
+                     "%s has no %r skill; scenarios can slow or remove skills, never add them"
+                     % (worker.get("name", command.get("worker_id")), skill))
+            normalized = {"type": kind, "worker_id": command["worker_id"], "skill": skill}
+            if command.get("remove") is True:
+                normalized["remove"] = True
+            else:
+                normalized["multiplier"] = _multiplier(command.get("multiplier"))
+        elif kind == "add_order":
+            items = command.get("items")
+            _require(isinstance(items, list) and items, "An order needs at least one item")
+            clean = []
+            for item in items:
+                _require(isinstance(item, dict), "Order items must be objects")
+                recipe, qty = item.get("recipe"), item.get("quantity", 1)
+                mods = item.get("modifiers") or []
+                _require(recipe in s["config"]["menu"].get("recipes", {}), "Unknown recipe %r" % (recipe,))
+                _require(type(qty) is int and 1 <= qty <= 10, "Quantity must be an integer 1-10")
+                _require(isinstance(mods, list) and all(isinstance(m, str) for m in mods), "Invalid modifiers")
+                clean.append({"recipe": recipe, "quantity": qty, "modifiers": list(mods)})
+            due = command.get("deadline_minutes")
+            _require(type(due) is int and s["next_tick"] < due <= s["deadline"],
+                     "Order deadline must be after minute %s and at most %s" % (s["next_tick"], s["deadline"]))
+            taken = set(s["orders"]) | {c.get("order_id") for c in s["operator_queue"]}
+            number = len(s["orders"]) + 1
+            while "O%d" % number in taken:
+                number += 1
+            order_id = "O%d" % number
+            trial = {"id": order_id, "items": copy.deepcopy(clean), "arrival": s["next_tick"],
+                     "deadline": due}
+            try:
+                self.expand_order(copy.deepcopy(trial), copy.deepcopy(s["config"]["menu"]))
+            except Exception as exc:  # recipe/modifier rules live in scenario.py
+                raise ValueError("Invalid order: %s" % exc)
+            normalized = {"type": kind, "order_id": order_id, "items": clean, "deadline_minutes": due}
+        elif kind == "order_deadline":
+            order = s["orders"].get(command.get("order_id"))
+            _require(order is not None, "Unknown order")
+            _require(order["correct"] is None, "Order %s is already finished" % command["order_id"])
+            due = command.get("deadline_minutes")
+            _require(type(due) is int and s["next_tick"] <= due <= s["deadline"],
+                     "Deadline must be between minute %s and %s" % (s["next_tick"], s["deadline"]))
+            normalized = {"type": kind, "order_id": command["order_id"], "deadline_minutes": due}
+        elif kind == "scenario_note":
+            text = command.get("text")
+            _require(isinstance(text, str) and text.strip(), "Scenario text is required")
+            changes = command.get("changes", [])
+            _require(isinstance(changes, list), "Scenario changes must be a list")
+            normalized = {"type": kind, "text": text.strip()[:500],
+                          "summary": str(command.get("summary") or "")[:500],
+                          "model": command.get("model"), "latency_ms": command.get("latency_ms"),
+                          "changes": copy.deepcopy(changes), "rejected": copy.deepcopy(command.get("rejected", []))}
+            json.dumps(normalized, allow_nan=False)
+        elif kind == "incident":
+            name = command.get("name")
+            _require(isinstance(name, str) and name.strip(), "Incident name is required")
+            _require(type(command.get("active")) is bool, "Incident active flag must be boolean")
+            station_ids = command.get("station_ids", [])
+            _require(isinstance(station_ids, list) and all(sid in s["stations"] for sid in station_ids),
+                     "Unknown incident station")
+            text = command.get("text") or ""
+            _require(isinstance(text, str), "Incident text must be a string")
+            normalized = {"type": kind, "name": name.strip(), "active": command["active"],
+                          "station_ids": list(station_ids), "text": text.strip()[:300]}
+        elif kind == "announce":
+            text = command.get("text")
+            _require(isinstance(text, str) and text.strip(), "Announcement text is required")
+            normalized = {"type": kind, "text": text.strip()[:300]}
+        else:
+            raise ValueError("Unknown command type: %r" % (kind,))
+        s["operator_queue"].append(normalized)
+        return copy.deepcopy(normalized)
+
+    def queue_batch(self, commands, note=None):
+        """Validate and queue several commands, e.g. a scenario agent's proposals.
+
+        Each command is validated on its own: invalid ones are returned in
+        ``rejected`` and never applied.  If ``note`` is given (text/summary/
+        model/latency_ms), a ``scenario_note`` recording the interpretation
+        is queued just before the accepted commands.
+        Returns ``(accepted, rejected)``.
+        """
+        queue = self.state["operator_queue"]
+        start = len(queue)
+        accepted, rejected = [], []
+        for command in commands:
+            why = command.get("why") if isinstance(command, dict) else None
+            payload = {k: v for k, v in command.items() if k != "why"} if isinstance(command, dict) else command
+            try:
+                normalized = self.queue_command(payload)
+            except (ValueError, KeyError, TypeError) as exc:
+                rejected.append({"command": copy.deepcopy(command), "error": str(exc)})
+                continue
+            accepted.append(dict(normalized, why=why) if why else normalized)
+        if note is not None:
+            self.queue_command(dict(note, type="scenario_note", changes=accepted, rejected=rejected))
+            queue.insert(start, queue.pop())
+        return accepted, rejected
+
+    def _apply_operator_commands(self):
+        s = self.state
+        queue, s["operator_queue"] = s["operator_queue"], []
+        for command in queue:
+            kind = command["type"]
+            if kind == "station":
+                self.set_station_available(command["station_id"], command["available"])
+            elif kind == "worker":
+                self.set_worker_available(command["worker_id"], command["available"])
+            elif kind == "stock":
+                record = s["ingredients"][command["ingredient_id"]]
+                before = record["available"]
+                after = command["amount"] if command["mode"] == "set" else before + command["amount"]
+                record["available"] = max(0, after)
+                self._emit("stock_changed", ingredient_id=command["ingredient_id"],
+                           before=before, after=record["available"], source="operator")
+            elif kind == "announce":
+                s["announcements"] = (s["announcements"] + [{"tick": s["time"], "text": command["text"]}])[-10:]
+                self._emit("announcement", text=command["text"], source="operator")
+            elif kind == "incident":
+                self._apply_incident(command)
+            elif kind == "station_capacity":
+                self._set_station_capacity(command["station_id"], command["capacity"])
+            elif kind == "station_speed":
+                station = s["stations"][command["station_id"]]
+                before = station.get("duration_multiplier", 1)
+                station["duration_multiplier"] = command["multiplier"]
+                self._emit("station_speed_changed", station_id=command["station_id"],
+                           before=before, after=command["multiplier"], source="operator")
+            elif kind == "worker_skill":
+                self._set_worker_skill(command)
+            elif kind == "add_order":
+                self._add_order(command)
+            elif kind == "order_deadline":
+                order = s["orders"][command["order_id"]]
+                if order["correct"] is not None:
+                    continue
+                before = order["deadline_minutes"]
+                order.update(deadline_minutes=command["deadline_minutes"], deadline=command["deadline_minutes"])
+                self._emit("order_deadline_changed", order_id=command["order_id"], before=before,
+                           after=command["deadline_minutes"], source="operator")
+            elif kind == "scenario_note":
+                self._emit("scenario_interpreted", **{k: v for k, v in command.items() if k != "type"})
+
+    def _interrupt(self, task_id, reason, **extra):
+        s = self.state
+        task = s["tasks"][task_id]
+        worker_id = task["worker_id"]
+        self._release(task, consume=False)
+        task.update(status="pending", worker_id=None, started_at=None, finishes_at=None)
+        self._emit("task_interrupted", worker_id=worker_id, task_id=task_id, reason=reason, **extra)
+
+    def _set_station_capacity(self, station_id, capacity):
+        s = self.state
+        station = s["stations"][station_id]
+        before = station["capacity"]
+        if before == capacity:
+            return
+        station["capacity"] = capacity
+        self._emit("station_capacity_changed", station_id=station_id, before=before, after=capacity,
+                   source="operator")
+        # Too many tasks for the new capacity: stop the most recently started ones.
+        running = sorted(station["active_tasks"],
+                         key=lambda t: (s["tasks"][t]["started_at"], t), reverse=True)
+        for task_id in running[:max(0, len(running) - capacity)]:
+            self._interrupt(task_id, "station_capacity", station_id=station_id)
+
+    def _set_worker_skill(self, command):
+        s = self.state
+        worker = s["workers"][command["worker_id"]]
+        skill = command["skill"]
+        if skill not in worker["skills"]:
+            return
+        before = worker["skills"][skill]
+        if command.get("remove"):
+            del worker["skills"][skill]
+            after = None
+        else:
+            after = command["multiplier"]
+            worker["skills"][skill] = after
+        self._emit("worker_skill_changed", worker_id=command["worker_id"], skill=skill,
+                   before=before, after=after, source="operator")
+        current = worker["current_task"]
+        if after is None and current and s["tasks"][current]["required_skill"] == skill:
+            self._interrupt(current, "skill_removed")
+
+    def _add_order(self, command):
+        s = self.state
+        order_id = command["order_id"]
+        if order_id in s["orders"]:
+            return
+        s["orders"][order_id] = {
+            "id": order_id, "items": copy.deepcopy(command["items"]),
+            "arrival": s["time"], "deadline": command["deadline_minutes"],
+            "arrival_minutes": s["time"], "deadline_minutes": command["deadline_minutes"],
+            "status": "scheduled", "task_ids": [], "expected_items": [], "packed": False,
+            "correct": None, "on_time": None, "completed_at": None, "added_by": "operator"}
+        # The shared target is "complete every order", so it grows with the order list.
+        s["target"]["completed_orders"] += 1
+        self._emit("order_added", order_id=order_id, items=command["items"],
+                   deadline_minutes=command["deadline_minutes"], source="operator")
+
+    def _apply_incident(self, command):
+        s = self.state
+        name, text = command["name"], command["text"]
+        if text:
+            s["announcements"] = (s["announcements"] + [{"tick": s["time"], "text": text}])[-10:]
+        if command["active"]:
+            if name in s["incidents"]:
+                return
+            down = [sid for sid in command["station_ids"] if s["stations"][sid]["available"]]
+            s["incidents"][name] = {"since": s["time"], "stations": down}
+            self._emit("incident_started", name=name, text=text, station_ids=down, source="operator")
+            for sid in down:
+                self.set_station_available(sid, False, cause=name)
+        else:
+            record = s["incidents"].pop(name, None)
+            if record is None:
+                return
+            self._emit("incident_cleared", name=name, text=text, station_ids=record["stations"],
+                       since=record["since"], source="operator")
+            for sid in record["stations"]:
+                self.set_station_available(sid, True, cause=name)
+
+    def set_station_available(self, station_id, available, cause=None):
+        _require(type(available) is bool, "Availability must be boolean")
+        s = self.state
+        station = s["stations"][station_id]
+        if station["available"] == available:
+            return
+        station["available"] = available
+        extra = {"cause": cause} if cause else {}
+        self._emit("station_availability", station_id=station_id, available=available, **extra)
+        if not available:
+            for task_id in list(station["active_tasks"]):
+                self._interrupt(task_id, "station_unavailable", station_id=station_id)
 
     def _release(self, task, consume):
         s = self.state
@@ -363,9 +667,15 @@ class SimulationEngine:
         s = self.state
         blocked = {}
         for task in s["tasks"].values():
-            if self._ready(task) and not any(w["available"] and task["required_skill"] in w["skills"] for w in s["workers"].values()):
+            if not self._ready(task):
+                continue
+            station = s["stations"].get(task["station_id"], {})
+            if not any(w["available"] and task["required_skill"] in w["skills"] for w in s["workers"].values()):
                 blocked[task["id"]] = "No available worker has skill " + task["required_skill"]
-                if task["id"] not in s["blockers"]:
+            elif not station.get("available", True) or station.get("capacity", 1) <= 0:
+                blocked[task["id"]] = "Station %s is out of service" % task["station_id"]
+            if task["id"] in blocked:
+                if s["blockers"].get(task["id"]) != blocked[task["id"]]:
                     self._emit("blocker", task_id=task["id"], reason=blocked[task["id"]])
         s["blockers"] = blocked
 
@@ -444,6 +754,7 @@ class SimulationEngine:
                     if index not in s["applied_events"] and event["at_minutes"] <= s["time"]:
                         self.set_worker_available(event["worker_id"], event["available"])
                         s["applied_events"].append(index)
+                self._apply_operator_commands()
                 self._admit_orders()
                 self._complete_tasks()
                 self._detect_blockers()
@@ -515,13 +826,26 @@ def _engine_for(state, scenario, policies):
     return SimulationEngine(state, scenario.expand_order, policies.build_worker_view, decide)
 
 
-def _checkpoint(engine, run_dir, recording):
+def _checkpoint(engine, run_dir, recording, narrator=None):
     state = engine.snapshot()
     committed_seq = state["last_event_seq"]
     state["last_committed_seq"] = committed_seq
-    recording.save_checkpoint(run_dir, state, copy.deepcopy(engine.pending_events))
+    new_events = copy.deepcopy(engine.pending_events)
+    recording.save_checkpoint(run_dir, state, new_events)
     engine.state["last_committed_seq"] = committed_seq
     engine.pending_events.clear()
+    if narrator is not None:
+        narrator(state, new_events)
+
+
+def _live_narrator(reporting):
+    """Print the conversational story of each committed checkpoint."""
+    owners = {}
+
+    def narrate(state, events):
+        for line in reporting.narrate_events(state, events, owners):
+            print(line, flush=True)
+    return narrate
 
 
 def _select_run(root, run_id):
@@ -548,15 +872,25 @@ def main(argv=None):
     resume = sub.add_parser("resume", help="Continue a paused run from its checkpoint")
     resume.add_argument("--run")
     resume.add_argument("--max-ticks", type=int)
+    for command in (start, resume):
+        command.add_argument("--quiet", action="store_true", help="Do not print the live kitchen story")
+        command.add_argument("--interactive", "-i", action="store_true",
+                             help="Run as a live console: type disruptions (e.g. 'fryer broken') while it runs")
+        command.add_argument("--pace", type=float, default=2.0,
+                             help="Interactive mode: real seconds per simulated minute (default 2)")
+        command.add_argument("--no-scenario-agent", action="store_true",
+                             help="Interactive mode: never send free text to the AI scenario agent")
     replay = sub.add_parser("replay", help="Read a saved run without policies or networking")
     replay.add_argument("--run")
     replay.add_argument("--at", type=int)
+    replay.add_argument("--story", action="store_true", help="Print the conversational story instead of the report")
     args = parser.parse_args(argv)
     try:
         if args.command == "replay":
             _require(args.at is None or args.at >= 0, "Replay tick must be nonnegative")
             run_dir = _select_run(args.runs_dir, args.run)
-            print(_module("replay").replay_run(run_dir, at=args.at))
+            replay_module = _module("replay")
+            print((replay_module.story_run if args.story else replay_module.replay_run)(run_dir, at=args.at))
             return 0
         _require(args.max_ticks is None or args.max_ticks > 0, "max_ticks must be positive")
         scenario, policies, recording = (_module(name) for name in ("scenario", "policies", "recording"))
@@ -584,8 +918,33 @@ def main(argv=None):
                 if state["mode"] == "ai":
                     _require(bool(os.environ.get("OPENROUTER_API_KEY")), "AI resume requires OPENROUTER_API_KEY")
             engine = _engine_for(state, scenario, policies)
-            result = engine.run(args.max_ticks, lambda current: _checkpoint(current, run_dir, recording))
-        print("Run {}: {} at minute {} ({})".format(result["run_id"], result["status"], result["time"], run_dir))
+            narrator = None
+            if not args.quiet:
+                reporting = _module("reporting")
+                narrator = _live_narrator(reporting)
+                if args.command == "run":
+                    print("\n".join(reporting.story_header(state)), flush=True)
+            save = lambda current: _checkpoint(current, run_dir, recording, narrator)  # noqa: E731
+            if args.interactive:
+                _require(args.max_ticks is None, "--interactive and --max-ticks cannot be combined")
+                interpret = None
+                if not args.no_scenario_agent and os.environ.get("OPENROUTER_API_KEY") and (
+                        os.environ.get("OPENROUTER_SCENARIO_MODEL") or os.environ.get("OPENROUTER_MODEL")):
+                    interpret = _module("scenario_agent").interpret
+                    print("Scenario agent: on (%s)" % (os.environ.get("OPENROUTER_SCENARIO_MODEL")
+                                                       or os.environ.get("OPENROUTER_MODEL")))
+                else:
+                    print("Scenario agent: off (free text becomes a message to the workers)")
+                _module("live").interactive(engine, save, pace=max(0.0, args.pace),
+                                            render_status=_module("reporting").render_status,
+                                            interpret=interpret)
+                result = engine.snapshot()
+            else:
+                result = engine.run(args.max_ticks, save)
+        print("\nRun {}: {} at minute {} ({})".format(result["run_id"], result["status"], result["time"], run_dir))
+        if result["status"] == "paused" and args.command != "replay":
+            print("Paused. Continue with: python3 orchestrator.py resume --run {}{}".format(
+                result["run_id"], " --interactive" if getattr(args, "interactive", False) else ""))
         if result["pause_reason"] == "decision_error":
             print(result["error"]["message"], file=sys.stderr)
             return 2

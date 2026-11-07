@@ -205,3 +205,129 @@ def test_format_event_rejection_and_refs():
 
 def test_natural_key():
     assert sorted(["O10", "O2", "O1"], key=natural_key) == ["O1", "O2", "O10"]
+
+
+# ---------------------------------------------------------------- story
+
+import subprocess  # noqa: E402
+
+from reporting import narrate_events, render_story, story_header  # noqa: E402
+
+
+def story_state():
+    return {
+        "run_id": "r-story", "mode": "ai", "model": "m/x", "status": "running", "time": 5,
+        "target": {"completed_orders": 1},
+        "config": {"target": {"description": "Finish order O1."}}, "deadline": 30,
+        "workers": {
+            "w_grill": {"name": "Dana", "role": "Grill cook", "skills": {"grill": 1.0},
+                        "description": "Grills."},
+            "w_expo": {"name": "Jordan", "role": "Expediter", "skills": {"grill": 1.0, "pack": 1.0},
+                       "description": "Packs."},
+        },
+        "stations": {"grill": {"name": "Grill"}, "packing": {"name": "Packing counter"}},
+        "orders": {"O1": {"items": [{"recipe": "burger", "quantity": 2, "modifiers": ["no_lettuce"]},
+                                    {"recipe": "fries", "quantity": 1, "modifiers": []}],
+                          "deadline_minutes": 12,
+                          "expected_items": [
+                              {"id": "O1.b1", "recipe_id": "burger", "final_task_id": "O1.b1.patty"},
+                              {"id": "O1.b2", "recipe_id": "burger", "final_task_id": "O1.b2.patty"},
+                              {"id": "O1.f1", "recipe_id": "fries", "final_task_id": "O1.f1.fry"}]}},
+        "tasks": {
+            "O1.b1.patty": {"order_id": "O1", "item_id": "O1.b1", "step_id": "patty", "station_id": "grill"},
+            "O1.b2.patty": {"order_id": "O1", "item_id": "O1.b2", "step_id": "patty", "station_id": "grill"},
+            "O1.pack": {"order_id": "O1", "item_id": None, "step_id": "pack", "station_id": "packing"},
+        },
+    }
+
+
+def ev(seq, tick, etype, worker=None, **payload):
+    e = {"seq": seq, "run_id": "r-story", "tick": tick, "type": etype, "payload": payload}
+    if worker:
+        e["worker_id"] = worker
+        payload["worker_id"] = worker
+    return e
+
+
+def decision(seq, tick, worker, action, task, why, accepted, reason="Accepted", round_=0):
+    return ev(seq, tick, "decision", worker, round=round_,
+              proposal={"action": action, "task_id": task, "why": why},
+              result={"accepted": accepted, "reason": reason})
+
+
+def story_events():
+    return [
+        ev(1, 0, "order_admitted", order_id="O1", task_ids=[]),
+        ev(2, 0, "task_started", "w_expo", task_id="O1.b1.patty", finishes_at=2),
+        decision(3, 0, "w_expo", "start_task", "O1.b1.patty", "Earliest deadline.", True),
+        decision(4, 0, "w_grill", "start_task", "O1.b1.patty", "I grill.", False, "Task is not pending"),
+        ev(5, 0, "task_started", "w_grill", task_id="O1.b2.patty", finishes_at=2),
+        decision(6, 0, "w_grill", "start_task", "O1.b2.patty", "Next patty.", True, round_=1),
+        ev(7, 2, "task_completed", "w_expo", task_id="O1.b1.patty"),
+        ev(8, 2, "item_produced", order_id="O1", item_id="O1.b1"),
+        decision(9, 2, "w_grill", "wait", None, "Nothing for me.", True),
+        decision(10, 2, "w_expo", "start_task", "O1.pack", "Pack it.", False,
+                 "Station is unavailable or full"),
+        ev(11, 3, "task_interrupted", "w_grill", task_id="O1.b2.patty"),
+        ev(12, 3, "worker_availability", "w_grill", available=False),
+        ev(13, 3, "blocker", task_id="O1.b2.patty", reason="No available worker has skill grill"),
+        ev(14, 4, "order_verified", order_id="O1", correct=True, on_time=False),
+        ev(15, 4, "decision_error", "w_expo", error_type="DecisionError"),
+        ev(16, 5, "run_finished", status="timed_out", correct_orders=0),
+    ]
+
+
+def test_story_reads_as_conversation():
+    text = render_story(story_state(), story_events())
+    expected = [
+        "KITCHEN STORY: run r-story (ai mode, model m/x)",
+        "Goal: Finish order O1.",
+        "Dana (Grill cook): Grills. [grill]",
+        "--- Minute 0 ---",
+        "Kitchen: New order O1 came in: 2 burgers (no lettuce) and 1 fries. Due by minute 12.",
+        "Jordan (Expediter): I'm free, so I'm grilling the patty for O1's burger #1. Ready at minute 2.",
+        '    thinking: "Earliest deadline."',
+        "Dana (Grill cook): I wanted to grill the patty for O1's burger #1, but Jordan already took it.",
+        "Dana (Grill cook): OK, instead I'm grilling the patty for O1's burger #2. Ready at minute 2.",
+        "Jordan (Expediter): Done, I grilled the patty for O1's burger #1. O1's burger #1 is ready.",
+        "Dana (Grill cook): I'll hold off for now.",
+        "Jordan (Expediter): I wanted to pack order O1, but the packing counter is full right now.",
+        "Kitchen: Dana (Grill cook) is no longer available!",
+        "Kitchen: Dana had to stop grilling the patty for O1's burger #2.",
+        "Kitchen: BLOCKED: nobody available can grill the patty for O1's burger #2",
+        "Kitchen: Order O1 verified: it's correct, but LATE (due 12).",
+        "Kitchen: Couldn't get a decision from Jordan's AI (DecisionError). Simulation paused.",
+        "Kitchen: TIME'S UP (timed_out): 0/1 orders correct by minute 5.",
+    ]
+    for line in expected:
+        assert line in text, line
+    assert text.index("is no longer available") < text.index("had to stop")
+    assert "story continues" in text  # state status is still running
+
+
+def test_story_is_pure_and_incremental_matches_full():
+    state, events = story_state(), story_events()
+    before = (copy.deepcopy(state), copy.deepcopy(events))
+    full = narrate_events(state, events)
+    owners, pieces = {}, []
+    for tick in sorted({e["tick"] for e in events}):
+        pieces += narrate_events(state, [e for e in events if e["tick"] == tick], owners)
+    assert pieces == full
+    assert (state, events) == before
+    assert story_header(state)[0].startswith("KITCHEN STORY")
+
+
+def test_cli_prints_live_story_and_quiet_suppresses_it(tmp_path):
+    base = [sys.executable, "orchestrator.py", "--runs-dir", str(tmp_path), "run",
+            "--scenario", "baseline", "--mode", "det", "--max-ticks", "3"]
+    out = subprocess.run(base, cwd=str(ROOT), capture_output=True, text=True, check=True).stdout
+    assert "KITCHEN STORY" in out and "--- Minute 0 ---" in out
+    assert "I'm free, so I'm" in out and 'thinking: "' in out
+    quiet = subprocess.run(base + ["--quiet"], cwd=str(ROOT), capture_output=True, text=True,
+                           check=True).stdout
+    assert "--- Minute" not in quiet and "Run " in quiet
+    run_dir = next(p for p in tmp_path.iterdir() if p.is_dir())
+    story = subprocess.run([sys.executable, "orchestrator.py", "--runs-dir", str(tmp_path),
+                            "replay", "--run", run_dir.name, "--story", "--at", "0"],
+                           cwd=str(ROOT), capture_output=True, text=True, check=True).stdout
+    assert "--- Minute 0 ---" in story and "--- Minute 1 ---" not in story

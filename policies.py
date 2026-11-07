@@ -65,9 +65,11 @@ def _is_available(worker):
 
 def _station_has_room(state, station_id):
     station = state.get("stations", {}).get(station_id)
-    if station is None:
+    if station is None or not station.get("available", True):
         return False
-    return len(station.get("active", [])) < station.get("capacity", 0)
+    # The engine keeps occupancy in "active_tasks"; "active" is the older name.
+    active = station.get("active_tasks", station.get("active", []))
+    return len(active) < station.get("capacity", 0)
 
 
 def _ingredients_ok(state, needed):
@@ -121,6 +123,10 @@ def build_worker_view(state, worker_id):
         if skill not in my_skills:
             continue
         base = task["base_minutes"]
+        # A slowed-down station (e.g. old fryer oil) stretches every worker's time.
+        slow = state.get("stations", {}).get(task["station_id"], {}).get("duration_multiplier", 1)
+        if slow != 1:
+            base = Decimal(str(base)) * Decimal(str(slow))
         qualified = [
             task_minutes(base, w["skills"][skill])
             for w in workers.values()
@@ -170,6 +176,17 @@ def build_worker_view(state, worker_id):
             iid: {"available": rec.get("available", 0), "reserved": rec.get("reserved", 0)}
             for iid, rec in sorted(state.get("ingredients", {}).items())
         },
+        "stations": {
+            sid: {
+                "working": bool(rec.get("available", True)),
+                "in_use": len(rec.get("active_tasks", rec.get("active", []))),
+                "capacity": rec.get("capacity", 0),
+                "slowdown": rec.get("duration_multiplier", 1),
+            }
+            for sid, rec in sorted(state.get("stations", {}).items())
+        },
+        # Latest messages from the kitchen manager (live operator commands).
+        "announcements": [dict(a) for a in state.get("announcements", [])[-5:]],
     }
     # Detach completely: nothing in the view may alias the live state.
     return copy.deepcopy(view)

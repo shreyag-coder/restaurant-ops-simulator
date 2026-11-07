@@ -265,3 +265,10 @@ def test_run_lock_context_manager(tmp_path):
         assert (run / recording.LOCK_FILE).exists()
         assert inspect_run(run)["locked_by"]["pid"] == os.getpid()
     assert not (run / recording.LOCK_FILE).exists()
+
+
+def test_story_file_written_with_each_checkpoint(tmp_path):
+    run = tmp_path / RUN_ID
+    run_steps(run, [(0, 1), (1, 1)])
+    story = (run / "story.txt").read_text()
+    assert story.startswith("KITCHEN STORY: run r-test")

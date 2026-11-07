@@ -12,6 +12,7 @@ Run directory layout::
       events.jsonl        one JSON event per line, seq = 1, 2, 3, ...
       snapshots/tNNN.json state copy at the latest save of tick NNN
       report.txt          rendered by reporting.render_report
+      story.txt           conversational narration (reporting.render_story)
       .writer.lock        present while an orchestrator owns the run
 
 Committed-event boundary
@@ -25,7 +26,7 @@ committed iff its ``seq <= last_event_seq`` of the current ``state.json``.
 2. drop any uncommitted tail of ``events.jsonl`` left by an earlier crash;
 3. append the new events, flush + fsync;
 4. atomically replace ``snapshots/tNNN.json``;
-5. atomically replace ``report.txt``;
+5. atomically replace ``report.txt`` and ``story.txt``;
 6. atomically replace ``state.json``  <- commit point.
 
 A crash before step 6 leaves the previous checkpoint fully valid: readers
@@ -40,7 +41,7 @@ import socket
 import time
 from pathlib import Path
 
-from reporting import render_report
+from reporting import render_report, render_story
 
 SCHEMA_VERSION = 1
 SUPPORTED_SCHEMA_VERSIONS = (1,)
@@ -48,6 +49,7 @@ SUPPORTED_SCHEMA_VERSIONS = (1,)
 STATE_FILE = "state.json"
 EVENTS_FILE = "events.jsonl"
 REPORT_FILE = "report.txt"
+STORY_FILE = "story.txt"
 SNAPSHOT_DIR = "snapshots"
 LOCK_FILE = ".writer.lock"
 REPORT_EVENT_WINDOW = 40
@@ -403,6 +405,7 @@ def save_checkpoint(run_dir, state, new_events):
     atomic_write_text(snapshot_path(run_dir, tick), state_text)
     recent = (committed + new_events)[-REPORT_EVENT_WINDOW:]
     atomic_write_text(run_dir / REPORT_FILE, render_report(state, recent))
+    atomic_write_text(run_dir / STORY_FILE, render_story(state, committed + new_events))
 
     # 6. Commit.
     atomic_write_text(state_path, state_text)
