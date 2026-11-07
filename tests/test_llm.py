@@ -107,6 +107,27 @@ def test_payload_has_strict_schema_persona_and_view():
     assert p["provider"] == {"require_parameters": True}
 
 
+def test_payload_only_sends_parameters_current_endpoints_accept():
+    """With require_parameters, any unsupported field routes to zero endpoints
+    (seen live: "temperature" gave HTTP 404 "No endpoints found")."""
+    p = build_payload(VIEW, PERSONA, MODEL)
+    assert "temperature" not in p
+    # reasoning tokens count against max_tokens; 300 truncated live answers
+    assert p["max_tokens"] >= 1000
+
+
+def test_truncated_output_is_reported_and_retried():
+    cut = (200, json.dumps({"model": MODEL, "choices": [
+        {"finish_reason": "length", "message": {"role": "assistant", "content": '{"action": "sta'}}]}))
+    t = FakeTransport(cut, ok())
+    env = decide(t)
+    assert env["attempts"] == 2 and env["proposal"] == GOOD
+    with pytest.raises(DecisionError) as info:
+        decide(FakeTransport(cut, cut))
+    assert info.value.attempts[0]["error_type"] == "truncated"
+    assert "max_tokens" in info.value.attempts[0]["detail"]
+
+
 def test_request_headers_and_url():
     t = FakeTransport(ok())
     decide(t, timeout=12.5)

@@ -52,7 +52,7 @@ SNAPSHOT_DIR = "snapshots"
 LOCK_FILE = ".writer.lock"
 REPORT_EVENT_WINDOW = 40
 
-REQUIRED_STATE_KEYS = ("schema_version", "run_id", "clock", "last_event_seq")
+REQUIRED_STATE_KEYS = ("schema_version", "run_id", "last_event_seq")
 REQUIRED_EVENT_KEYS = ("seq", "run_id", "tick", "type")
 
 __all__ = [
@@ -138,10 +138,12 @@ def list_snapshot_ticks(run_dir):
 
 
 def _tick_of(state):
+    # The orchestrator's state keeps the current tick in state["time"];
+    # state["clock"]["tick"] is still accepted for older/sample states.
     clock = state.get("clock")
-    tick = clock.get("tick") if isinstance(clock, dict) else None
+    tick = clock.get("tick") if isinstance(clock, dict) else state.get("time")
     if not isinstance(tick, int) or isinstance(tick, bool) or tick < 0:
-        raise ValueError("state['clock']['tick'] must be a non-negative integer")
+        raise ValueError("state['time'] (or state['clock']['tick']) must be a non-negative integer")
     return tick
 
 
@@ -344,7 +346,7 @@ def save_checkpoint(run_dir, state, new_events):
       plus ``len(new_events)`` — the caller owns that field;
     * ``new_events`` continue the sequence contiguously, carry the state's
       ``run_id``, and have non-decreasing ticks no later than the state's;
-    * ``state["clock"]["tick"]`` never goes backwards.
+    * the state's tick (``state["time"]``) never goes backwards.
 
     Neither argument is modified.  If another live process holds the run's
     writer lock, ``RunLockedError`` is raised.

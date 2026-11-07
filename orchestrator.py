@@ -35,6 +35,7 @@ import importlib
 import json
 import math
 import os
+import socket
 import sys
 import uuid
 from collections import Counter
@@ -486,6 +487,13 @@ def run_lock(run_dir):
             fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise ValueError("Another orchestrator is writing this run") from exc
+        # Record the owner in the format recording.py expects, so its
+        # save_checkpoint recognizes this process as the run's writer.
+        handle.seek(0)
+        handle.truncate()
+        json.dump({"pid": os.getpid(), "host": socket.gethostname()}, handle)
+        handle.flush()
+        os.fsync(handle.fileno())
         try:
             yield
         finally:

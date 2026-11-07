@@ -58,8 +58,10 @@ def resolve_run(runs_root, run_id=None):
 
 
 def _tick_of(state):
-    clock = state.get("clock") if isinstance(state, dict) else None
-    return clock.get("tick") if isinstance(clock, dict) else None
+    if not isinstance(state, dict):
+        return None
+    clock = state.get("clock")
+    return clock.get("tick") if isinstance(clock, dict) else state.get("time")
 
 
 def _ranges(ticks):

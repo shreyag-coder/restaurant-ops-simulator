@@ -90,6 +90,11 @@ def _sanitize(text, api_key):
 # Request building and transport
 # --------------------------------------------------------------------------
 
+# Current models reason before answering, and those tokens count against
+# max_tokens; 300 left no room for the ~40-token JSON answer.
+MAX_TOKENS = 2000
+
+
 def build_payload(view, persona, model):
     return {
         "model": model,
@@ -101,9 +106,12 @@ def build_payload(view, persona, model):
             "type": "json_schema",
             "json_schema": {"name": "worker_decision", "strict": True, "schema": RESPONSE_SCHEMA},
         },
+        # require_parameters keeps routing to endpoints that enforce the strict
+        # schema. Do not send "temperature": current Claude/GPT endpoints on
+        # OpenRouter don't accept it, so require_parameters would match none
+        # (HTTP 404 "No endpoints found"). Repeatable runs use det mode.
         "provider": {"require_parameters": True},
-        "temperature": 0,
-        "max_tokens": 300,
+        "max_tokens": MAX_TOKENS,
     }
 
 
@@ -166,6 +174,9 @@ def parse_completion(status, text, view):
 
     if message.get("refusal"):
         raise _AttemptFailure("refusal", "model refused: %s" % message["refusal"])
+    if body["choices"][0].get("finish_reason") == "length":
+        # Reasoning models count thinking tokens against max_tokens.
+        raise _AttemptFailure("truncated", "output cut off at max_tokens=%d" % MAX_TOKENS)
     content = message.get("content")
     if not isinstance(content, str) or not content.strip():
         raise _AttemptFailure("bad_response", "empty message content")

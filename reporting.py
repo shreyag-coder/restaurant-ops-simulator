@@ -108,7 +108,13 @@ def _deadline(state):
 def _target_text(state):
     target = state.get("target")
     if isinstance(target, dict):
-        return _first(target, "text", "description")
+        text = _first(target, "text", "description")
+        if text is not None:
+            return text
+        # The orchestrator keeps the target's wording in the frozen config.
+        config = state.get("config")
+        frozen = config.get("target") if isinstance(config, dict) else None
+        return _first(frozen, "text", "description") if isinstance(frozen, dict) else None
     return target
 
 
@@ -121,7 +127,7 @@ def _items_text(order):
         if not isinstance(item, dict):
             parts.append(_fmt(item))
             continue
-        name = _first(item, "item_id", "dish", "name") or "?"
+        name = _first(item, "item_id", "dish", "name", "recipe", "recipe_id") or "?"
         qty = _first(item, "qty", "quantity")
         mods = item.get("modifiers") or []
         text = ("%sx %s" % (_fmt(qty), name)) if qty is not None else str(name)
