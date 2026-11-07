@@ -1,54 +1,59 @@
 # Restaurant Operations Simulator
 
-A planned multi-agent restaurant simulator: four AI workers independently choose tasks through OpenRouter. The workers communicate through plain markdown files, and one Python orchestrator script validates their proposals, advances simulated time, and is the only writer of the restaurant state.
+A planned multi-agent restaurant simulator. Four AI workers independently choose kitchen tasks through OpenRouter. One Python orchestrator validates their proposals, advances simulated time, and is the only writer of the restaurant state.
 
-**Current status: planning only. No application code, dependencies, or deployment have been created.**
+**Current status: planning only. No application code has been written yet.**
 
 ## Project documents
 
 - [Original requirements](BRIEF.md)
-- [Architecture, delivery plan, and acceptance criteria](PROJECT_PLAN.md)
-- [Two-person task assignments and checkpoints](TASKS.md)
+- [Architecture, rules, schedule, and verification](PROJECT_PLAN.md)
+- [Two-person checklist](TASKS.md)
 
 ## Design in brief
 
-- No internal APIs and no server. State and communication live in text files.
-- `sim/world.md` is the authoritative restaurant state (clock, stations, ingredients, orders, tasks).
-- `sim/target.md` holds the shared goal and deadline.
-- `sim/agents/<name>.md` holds each worker's profile, skills, current task, and task history.
-- Each turn an agent reads the target, the world, and its own file, then writes a **proposal** to `sim/proposals/`. It never edits `world.md`.
-- `orchestrator.py` validates proposals one at a time, applies valid ones atomically, advances the clock, and appends to `sim/log/`, including a snapshot per tick for replay.
+- **JSON for machine data, plain text for people and models.** There are no servers and no internal APIs.
+- `sim/config/*.json`: menu, workers, and scenario (10 orders; baseline, disruption, and blocker variants).
+- `sim/personas/<id>.txt`: each worker's background, given to the model.
+- `sim/runs/<run_id>/state.json`: the authoritative state. `events.jsonl` is the event log, `snapshots/` holds a copy per tick, and `report.txt` is the human-readable view.
+- Each simulated minute, only idle workers with ready tasks are asked to choose. The orchestrator validates proposals one at a time, reserves the worker, station, and ingredients atomically, and completes tasks when their time is up.
 
-## Proposed technology
+## Technology
 
-| Component | Planned choice |
+| Component | Choice |
 |---|---|
-| Orchestrator | Python 3.12 |
-| AI decisions | OpenRouter, strict JSON-schema responses |
-| State and messages | Markdown files with structured JSON blocks |
-| Tests | pytest and an explicitly selected deterministic worker policy |
-| Inspection | Terminal summary or static page reading the files; optional dashboard later |
-| Replay | Snapshots and event log, no further model calls |
+| Orchestrator | Python 3.9+, standard library only |
+| AI decisions | OpenRouter, strict JSON-schema output |
+| State, config, logs | JSON / JSONL |
+| Personas, report | Plain text |
+| Tests | pytest with an explicitly selected deterministic policy |
+| Replay | Snapshots and events, no model calls |
 
-## Delivery estimates
+## Planned usage
+
+```
+export OPENROUTER_API_KEY=...        # never commit
+python orchestrator.py run --scenario baseline --mode det
+python orchestrator.py run --scenario disruption --mode ai
+python orchestrator.py replay
+pytest
+```
+
+## Estimates
 
 | Milestone | Estimate | Confidence |
 |---|---|---|
-| First draft | 3 elapsed hours with two people; 6 person-hours | 60/100 |
-| Draft with contingency | 5 elapsed hours with two people; 10 person-hours | 85/100 |
-| Finalized demo | Additional 10–14 person-hours | 70/100 |
+| First draft | 3 elapsed hours with two people (6 person-hours) | 70/100 |
+| Draft with contingency | 4.5 elapsed hours | 90/100 |
+| Polished demo with a web dashboard | +6–10 person-hours | 70/100 |
 
-Estimates assume OpenRouter credits are ready and both contributors use AI coding assistance. Confidence scores are engineering judgments, not measured probabilities.
+Estimates are engineering judgments, not measurements.
 
 ## Ownership
 
-- **Person A:** orchestrator, world state, validation, simulated time, tests.
-- **Person B:** agent files and prompts, OpenRouter integration, replay and viewer.
-
-Contributor names remain unassigned. The detailed split is in [TASKS.md](TASKS.md).
+- **Person A:** engine, config, validation, simulated time, disruption, tests.
+- **Person B:** personas, OpenRouter integration, report, replay, docs.
 
 ## Planned demonstration
 
-Complete ten orders within thirty simulated minutes, inspect worker decisions and resource reservations in the files, make a worker unavailable, observe qualified reassignment, and replay the recorded run without further model calls.
-
-The release target is a polished hackathon demo. A web dashboard, hosting, production persistence, multiple restaurants, and recipe editing are outside the core release.
+Run ten orders against a 30-minute target and read the decisions and reservations in `report.txt` and `events.jsonl`. Make the grill cook unavailable at minute 5 and watch the backup take over. Remove the backup's skill to see an explicit blocker. Finally, replay the run without any model calls.

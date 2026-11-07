@@ -1,143 +1,143 @@
-# Restaurant Operations Simulator — File-Based Core-First Plan
+# Restaurant Operations Simulator — Simple JSON + Text Plan
 
-Updated: November 7, 2026. This is a plan for future work, not a claim that the application is implemented.
+Updated: November 7, 2026. This is a plan for future work, not a claim that anything is implemented. Original requirements: [BRIEF.md](BRIEF.md).
 
-## 1. Goal and working approach
+## 1. Goal and loop
 
-Get the core restaurant simulation working first, using **plain markdown/text files as the state and communication layer** and **one orchestrator script** as the only writer of shared state. There are no internal APIs and no server. Both contributors guide AI coding tools through prompts, review the results, and verify behavior.
+Build a small, working multi-agent kitchen simulation in about 3 hours with two people using AI coding tools.
 
-The original product requirements remain in [BRIEF.md](BRIEF.md). The brief's "single JSON document" and "backend" are realized here as `world.md` (structured, machine-readable blocks inside markdown) and the orchestrator script.
+- **JSON** for everything a program reads or writes: config, state, logs.
+- **Plain text** for what people and models read: worker personas and the generated report.
+- **One process, `orchestrator.py`, is the only writer of state.** Workers (AI or deterministic) only return proposals; the orchestrator validates and applies them.
 
-The essential loop is:
+Each tick (one simulated minute):
 
-**Orchestrator gives agent the files → agent writes a proposal → orchestrator validates → orchestrator updates files → continue.**
-
-Agents never edit `world.md` directly. They propose; the orchestrator decides. This keeps validation, simulated time, resource reservation, and order correctness authoritative, and it removes write races between agents.
-
-### First-draft target and confidence
-
-| Deliverable | Target | Confidence |
-|---|---|---|
-| Working core draft with real AI decisions and file-based inspection | 3 elapsed hours with two contributors; 6 person-hours | 60/100 |
-| Working draft with contingency | Up to 5 elapsed hours; 10 person-hours | 85/100 |
-| Polished demo (viewer, replay, docs) | Provisionally 10–14 additional person-hours after the draft | 70/100 |
-
-These are engineering estimates, not measured probabilities. They assume familiarity with AI coding tools and ready OpenRouter credits. Dropping the API layer and server removes work, but the viewer and hosting are now optional extras. Re-estimate after the first complete run.
+**apply disruption → admit arriving orders → complete finished tasks → detect blockers → ask idle workers → validate proposals in fixed order → apply → save state, events, snapshot, report → advance clock**
 
 ## 2. File layout
 
 ```
 sim/
-  target.md          # shared goal, deadline, scoring rules (read-only to agents)
-  world.md           # authoritative state: clock, version, stations, ingredients, recipes, orders, tasks
-  agents/
-    <name>.md        # one per worker: profile, structured skills, current task, task history, last result
-  proposals/
-    <name>.md        # the agent's single proposal for the current turn (overwritten each turn)
-  log/
-    events.md        # append-only ordered event log (decisions, accept/reject, start/complete, blockers)
-    snapshots/       # world.md copied per tick, e.g. t0000.md, t0005.md
-orchestrator.py      # the only process that writes world.md, agent files, and log/
+  config/                  # hand-written, never changed during a run
+    menu.json              # ingredients + stock, stations + capacity, recipes, modifiers, pack/verify steps
+    workers.json           # id, name, role, skills {skill: duration multiplier}
+    scenario.json          # target, deadline (30), 10 orders, variants: baseline | disruption | blocker
+  personas/<id>.txt        # background prose given to the model
+  runs/<run_id>/           # one folder per run (git-ignored)
+    state.json             # authoritative current state
+    events.jsonl           # append-only, one JSON event per line (decisions, accepts, rejects, starts, completions, blockers)
+    snapshots/tNN.json     # state copy per tick, used by replay
+    report.txt             # human-readable view, regenerated every tick
+orchestrator.py            # engine, policies, CLI
+llm.py                     # OpenRouter call with strict JSON schema
+tests/test_engine.py       # pytest
 ```
 
-### File format rules
+Python 3.9+ standard library only (`urllib` for HTTP). pytest for tests. The API key comes from `OPENROUTER_API_KEY`; the model from `OPENROUTER_MODEL`.
 
-- Markdown for readability. **Facts live in fenced `json` blocks or YAML frontmatter** (clock, station occupancy, inventory, task status, skills). **Prose sections** hold background, explanations, and history.
-- Code parses only the structured blocks. Models read both.
-- `world.md` stays small: current snapshot only. History belongs in agent files and `log/`.
-- Each agent file has fixed sections: Profile (prose), Capabilities (structured), Current state (structured), Last result (written by orchestrator), Task history (appended by orchestrator).
-- A proposal file contains one structured action plus a short explanation. Allowed actions: `start_task(task_id, station_id)`, `request_help(task_id, reason)`, `report_blocker(task_id, reason)`, `wait(reason)`.
+## 3. Engine rules
 
-## 3. Orchestrator responsibilities
+- **Clock:** integer ticks; 1 tick = 1 simulated minute. A task started at `t` with duration `d` completes at `t + d`, never earlier.
+- **Tasks are generated, not reasoned about.** When an order arrives, the orchestrator expands it from the recipes, one set per unit:
+  - Burger: `patty` (grill) → `toppings` (prep) → `assemble` (assembly). Fries: `fry` (fryer).
+  - Per order: `pack` (needs every item's final step) → `verify` (needs pack).
+  - Ids are readable: `O2.b1.patty`, `O2.f1.fry`, `O2.pack`, `O2.verify`.
+- **Modifiers** change the task graph or ingredient amounts: `no_lettuce` skips `toppings`, `no_cheese` / `extra_cheese` scale cheese.
+- **Durations:** `ceil(step minutes × worker's skill multiplier)` (e.g. a backup grill cook at 1.5×).
+- **Reservation (atomic):** starting a task takes the worker, one station slot, and its ingredients (`available → reserved`) together, or nothing.
+- **Completion:** consumes reserved ingredients, frees the station and worker, appends to the worker's history.
+- **Ingredient record:** `{"available": n, "reserved": n}` per ingredient.
 
-- Run the turn loop: for each idle agent, provide `target.md`, `world.md`, and that agent's file to the model (OpenRouter, strict JSON-schema output), and save the response to `proposals/<name>.md`.
-- Validate proposals **one at a time, in a deterministic order**: worker available and qualified, prerequisites complete, task not already claimed, ingredients available, station capacity free.
-- Apply valid proposals atomically (reserve worker, station capacity, and ingredients together). Reject invalid ones with a reason written to the agent's "Last result"; rejected actions leave resources unchanged.
-- Advance the discrete simulation clock to the next task completion. On completion, consume reserved ingredients, release resources exactly once, update task and order status, and update the agent's history.
-- Verify orders (quantities, modifiers, recipe steps, packing, final verification). Track correctness and timeliness separately.
-- Apply the staffing disruption: mark a worker unavailable at a scheduled time, return unfinished tasks to pending, release reservations, and let qualified workers claim them with the duration restarting. Completed prerequisites stay complete.
-- Report an explicit blocker when no qualified worker exists; never invent a skill.
-- Append every decision and result to `log/events.md` and write a snapshot per tick.
-- End the run when the target is reached or the deadline expires.
-- Support deterministic mode (explicitly selected, used for tests) and replay mode (reads snapshots/log, makes no model calls). Never silently use deterministic mode during an AI run. Keep the API key in an environment variable and out of the repository.
-- Handle model timeouts and invalid responses with bounded retries, then record a visible error and stop or pause rather than guessing.
+## 4. Actions
 
-## 4. What must work before we expand
+| Action | Effect |
+|---|---|
+| `start_task(task_id)` | Validated and applied; the station comes from the task |
+| `wait(reason)` | Logged |
+| `report_blocker(task_id, reason)` | Logged |
+| `request_help(task_id, reason)` | Logged |
 
-Start with the smallest scenario: one order, two workers, explicit capabilities, ingredients, stations, and timed recipe steps. Use the deterministic policy to verify the engine, then connect real OpenRouter decisions before calling the AI core complete.
+Every proposal includes a short `why`. Validation, in order: worker available and idle → task exists and is pending → worker has the skill → prerequisites done → ingredients available → station has room. A rejection records the reason in the worker's `last_result` and changes nothing else.
 
-The working core must demonstrate:
+The orchestrator also **detects blockers itself**: a ready task with no available qualified worker is logged once as `blocker` and shown in the report. Nobody gains a skill they don't have.
 
-- `world.md` as the single authoritative state with clock, version, tasks, workers, ingredients, and stations.
-- Workers choosing tasks from their own files and the current state, according to explicit capabilities.
-- Atomic validation and reservation; rejected actions leave state unchanged.
-- Tasks taking configured simulated time and releasing resources exactly once.
-- Overlapping tasks by different workers without duplicate claims.
-- Order completion based on produced quantities, modifiers, recipe completion, packing, and verification.
-- Clear explanations, rejection reasons, blockers, and outcomes in the log and agent files.
+## 5. Decisions
 
-AI mistakes should be visible outcomes, not hidden by changing state or substituting scripted decisions.
+- Only **idle, available workers with at least one ready task they are qualified for** are asked. Everyone else is skipped, which keeps model calls low.
+- Each worker gets a small JSON **view**, not the whole state:
+  - time, deadline, its skills, `last_result`
+  - `ready_tasks`: id, order deadline, `my_minutes`, `best_minutes` (fastest available qualified worker), `station_has_room`, `ingredients_ok`
+  - what the other workers are doing, and the current stock
+- All asked workers propose against the same state; proposals are applied **one at a time in fixed worker order**, so conflicting claims are rejected. Rejected workers get **one re-ask round** in the same tick.
+- **Modes**, always chosen explicitly and recorded in the state:
+  - `det`: a fixed rule (earliest deadline first; prefer tasks where I'm the fastest; otherwise any feasible task). Used for tests and the baseline.
+  - `ai`: persona text as the system prompt, the view as the user message, a strict JSON schema `{action, task_id, why}`, and one retry. If it still fails, the run is set to `paused` with the error shown; it never silently switches to `det`.
+- Every decision event records the worker, mode, model, proposal, latency, and result.
 
-Technology: Python 3.12 for the orchestrator, HTTPX (or the OpenRouter-compatible client) for model calls, pytest for tests. A web dashboard and hosting are optional later work (see §6).
+## 6. Disruption and order verification
 
-## 5. Two-person prompting workflow
+- **Disruption variant:** the grill cook becomes unavailable at minute 5. Their running task goes back to `pending`, the station slot and ingredients are released, and the duration restarts for whoever claims it next. Completed prerequisites stay done.
+- **Blocker variant:** the same disruption, plus the backup's grill skill is removed. Grill tasks are reported as blocked and the run times out, which is the expected result.
+- **Verification** runs when `verify` completes: the burgers and fries produced (with their modifiers) must match the order, every step must be done, and the order must be packed.
+- **Metrics:** each order gets `correct` and `on_time` separately. The run ends `completed` when all orders are done, or `timed_out` at the deadline.
 
-### Ownership
+## 7. CLI
 
-- **Person A — engine and files:** orchestrator loop, `world.md` structure, validation, reservations, simulated time, completion, order verification, disruption handling, snapshots, and pytest checks.
-- **Person B — agents and visibility:** agent files and profiles, prompts, OpenRouter integration, proposal parsing, decision recording, then a viewer and replay.
-- Person A owns `orchestrator.py` and `world.md`/`target.md` structure; Person B owns `agents/` content, prompts, and the model-call module. Avoid prompting separate tools to edit the same files at once.
-- Agree on the file templates by looking at one real example of each, not a formal contract.
+```
+python orchestrator.py run --scenario baseline|disruption|blocker --mode det|ai [--max-ticks N]
+python orchestrator.py resume [--run ID] [--max-ticks N]     # continue a paused or stepped run
+python orchestrator.py replay [--run ID] [--at T]            # print events / snapshot T; no model calls
+```
 
-### Prompt 1 — prove the engine (Person A)
+- **Step / pause:** use `--max-ticks 1`, then `resume`.
+- **Reset:** start a new `run`; old runs stay in `sim/runs/`.
+- **View:** `report.txt` shows target, time, orders and task status, stations, stock, workers, the latest decisions, and blockers. The full state is in `state.json`.
 
-> Read BRIEF.md and PROJECT_PLAN.md. Build the smallest working file-based restaurant simulation. `sim/world.md` is the authoritative state (structured JSON blocks inside markdown), `sim/target.md` holds the goal, and each worker has `sim/agents/<name>.md`. A single `orchestrator.py` is the only writer of shared state; agents only write a proposal file. Start with one order, two workers, explicit capabilities, recipe dependencies, ingredients, and station capacity, using explicit deterministic worker choices. Validate proposals one at a time and reserve all resources together. Advance a simulated clock so tasks cannot finish early. Append decisions, rejections, starts, and completions to `sim/log/events.md` and write a snapshot per tick. Add focused checks for conflicting claims, missing skills, and inventory accounting. Show one complete run. Defer any dashboard and hosting.
+## 8. Two-person 3-hour schedule
 
-**Checkpoint:** one order completes; an invalid proposal is rejected without corrupting resources.
+- **Person A — engine:** `orchestrator.py` engine, config files, validation, clock, disruption, verification, snapshots, tests.
+- **Person B — agents and visibility:** personas, `llm.py`, AI policy, decision logging, report, replay, docs.
 
-### Prompt 2 — connect real worker decisions (Person B, integrated with Person A)
+| Minutes | Person A | Person B | Checkpoint |
+|---|---|---|---|
+| 0–20 | `menu.json`, `scenario.json`, state shape | `workers.json`, personas, view and proposal shape | Formats agreed from one real example of each |
+| 20–60 | Task generation, validation, reservations, clock, completion (`det` mode) | `llm.py` with strict schema, one smoke call | **60:** one order completes in `det`; one valid AI proposal parsed |
+| 60–120 | 10 orders, verification, disruption, blockers, events + snapshots | Plug the AI policy into the loop, re-ask round, paused-on-error | **120:** full baseline in `det` and `ai`; disruption run works |
+| 120–160 | Tests from §9, fixes | `report.txt`, `replay`, `resume` | Runs are inspectable and replayable |
+| 160–180 | Fresh-clone run of all three variants | README setup and demo steps | Tag `v0.1-draft` |
 
-> Inspect the working simulation and connect independent worker decisions through OpenRouter. Give each worker an agent file with its own background and explicit capabilities. For each idle worker, pass target.md, world.md, and the worker's own file, and require a strict-schema proposal: start a task, request help, report a blocker, or wait, with a short explanation. Validate the response before it reaches the orchestrator. Keep the API key in an environment variable. Record the model, proposal, explanation, latency, and accepted/rejected result in the agent file and event log. Handle timeouts and invalid responses with bounded retries and a visible error. Keep deterministic mode explicitly selectable; never silently use it in an AI run. Verify one full AI-driven order.
+**If behind at minute 120,** cut in this order: `replay --at` (keep the event printout), `request_help`, report polish. Never cut validation, simulated time, or honest AI logging.
 
-**Checkpoint:** real model decisions drive the loop; only the orchestrator changes shared state.
+### Prompts for the coding tool
 
-### Prompt 3 — expand and test adaptation (Person A, Person B reviewing)
+1. *(A)* "Read BRIEF.md and PROJECT_PLAN.md §2–§4. Implement the engine in `orchestrator.py` with the `det` policy, config in `sim/config/`, standard library only, Python 3.9. Run one order to completion and show events.jsonl."
+2. *(B)* "Implement `llm.py` per PROJECT_PLAN.md §5: OpenRouter, strict JSON schema, timeout, one retry, error raised. Add the `ai` policy using personas and per-worker views. Run the baseline in `ai` mode."
+3. *(A)* "Add the 10-order scenario, the disruption and blocker variants, verification, and the metrics from §6. Add the pytest checks from §9."
+4. *(B)* "Add `report.txt`, `replay`, and `resume` per §7. Update the README with setup and demo steps."
 
-> Expand the proven loop to one restaurant, four workers, a small explicit menu, and ten sample orders. Use burgers and fries, quantity variations, and supported burger modifiers. Give workers distinct backgrounds and structured capabilities, including a qualified backup for the grill cook. Target completion within thirty simulated minutes. Add a baseline scenario and a scenario where the grill cook becomes unavailable at minute five. Interrupted unfinished tasks return to pending, release their reservations, and restart their duration when another qualified worker claims them; completed prerequisites remain complete. Verify that removing the backup qualification produces an explicit blocker instead of an invented skill. Record correctness and timeliness separately.
+## 9. Verification (pytest + manual)
 
-**Checkpoint:** the larger scenario stays consistent, disruption recovery works, and impossible work is explained.
+1. Two workers claim the same task: one is accepted, the other is rejected with a reason.
+2. Missing skill, insufficient stock, unfinished prerequisite, or a full station: the start is rejected and the state is unchanged.
+3. A task completes exactly at `start + duration`, and its resources are released once.
+4. Disruption: the interrupted task returns to pending, and its ingredients go from reserved back to available.
+5. Blocker variant: a blocker is logged and nobody grills.
+6. Modifiers: `no_lettuce` skips toppings; `no_cheese` uses no cheese.
+7. The `det` baseline is repeatable: two runs produce identical event sequences, ignoring timestamps.
+8. Replay reads snapshots and events with no model calls.
 
-### Prompt 4 — inspection and replay (Person B)
+A tool saying "done" is not evidence. Check tests, `events.jsonl`, and `report.txt`.
 
-> Make runs easy to inspect. Add a replay mode that steps through `log/snapshots/` and `log/events.md` without calling the model, and a simple viewer (a terminal summary or a small static page that reads the files) showing target, time, progress, orders and tasks, stations, ingredients, worker activity, decisions, blockers, and action results, plus the full `world.md`. Support start, pause, step, and reset in the orchestrator CLI; reset archives the old run and discards pending proposals. Prioritize readable behavior over polish.
+## 10. Deferred
 
-**Checkpoint:** both contributors can explain a run from the files or viewer and replay it.
+Web dashboard (it can read the same JSON files), hosting, per-task proficiency beyond one multiplier per skill, ingredient restocking, multiple restaurants, recipe editing.
 
-### Prompt 5 — finalize (both)
+## Estimates
 
-> Review the implementation against BRIEF.md. Fix correctness gaps before polishing. Verify a fresh baseline run, a staffing disruption, invalid proposals, model failures, controls, and replay. Save baseline and disruption recordings, update setup instructions (including how to set the API key), and prepare a three-minute demonstration. Report remaining limitations accurately.
+| Deliverable | Estimate | Confidence |
+|---|---|---|
+| Draft (§8 complete) | 3 elapsed hours; 6 person-hours | 70/100 |
+| Draft with contingency | 4.5 elapsed hours | 90/100 |
+| Polished demo (web dashboard, prompt tuning, recordings) | +6–10 person-hours | 70/100 |
 
-**Checkpoint:** a documented, repeatable demo from a fresh clone.
-
-## 6. Optional later work
-
-A web dashboard, a hosted deployment, and a real-time API are no longer part of the core. Add them only if time remains, reading the same files. Production persistence, multiple restaurants, and recipe editing remain out of scope.
-
-## 7. Verification and scope control
-
-Ask the coding tool to verify these scenarios as behavior is added:
-
-1. Two workers propose the same task: only one succeeds.
-2. Missing skill, unavailable ingredients, incomplete prerequisites, or a full station: reject without partial reservations.
-3. A task stays active until its simulated finish time; completion releases resources exactly once.
-4. Interrupting a task restores reservations consistently and allows qualified reassignment.
-5. Wrong quantities or modifiers prevent order verification.
-6. Missing replacement skills produce an explicit blocker.
-7. A malformed or stale proposal file cannot change state.
-8. Deterministic baseline results are repeatable; real AI results are recorded honestly even when they miss the target.
-9. Replay reproduces recorded states without new model requests.
-10. A hand-edited or malformed `world.md` is detected rather than silently accepted.
-
-After each prompt, inspect the result and run a short scenario. A tool saying "done" is not sufficient evidence; rely on tests, logs, and snapshots. Keep an explicit list of unfinished requirements rather than calling an incomplete draft finalized.
-
-Known tradeoffs of the file-based approach: markdown parsing is only as reliable as the structured blocks, so keep them strict; there is no live push to a UI; and model calls run per turn, so cost and latency grow with the number of workers and ticks.
+These are engineering judgments, not measurements. Re-estimate at the 60-minute checkpoint.

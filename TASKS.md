@@ -1,95 +1,38 @@
-# Two-Person Delivery Tasks
+# Two-Person Task Checklist
 
-This is the implementation backlog, not a record of completed work. All tasks start unchecked. See [PROJECT_PLAN.md](PROJECT_PLAN.md) for the file layout, orchestrator behavior, prompts, and tests.
+Backlog only; nothing here is done yet. Schedule, rules, and prompts are in [PROJECT_PLAN.md](PROJECT_PLAN.md) §8.
 
-## Ownership and coordination
+## Coordination
 
-- **Person A:** `orchestrator.py`, `world.md`/`target.md` structure, validation, reservations, simulated time, disruption, order verification, snapshots, and engine tests.
-- **Person B:** agent files and profiles, prompts, OpenRouter module, proposal parsing, decision recording, then viewer and replay.
-- Only the orchestrator writes `world.md`, agent files, and `log/`. Agents write only `proposals/<name>.md`.
-- Agree the file templates by reviewing one real example of `world.md`, one agent file, and one proposal in the first 15 minutes. Person A owns later format changes; Person B reviews them.
-- Use short-lived branches (`feature/engine`, `feature/agents`). Integrate at the checkpoints below.
-- Keep the API key in an environment variable and out of commits. No internal APIs or servers.
+- Person A owns `orchestrator.py` and `sim/config/`. Person B owns `llm.py`, `sim/personas/`, the report, and replay.
+- Only the orchestrator writes `sim/runs/`. Workers only return proposals.
+- Short-lived branches (`feature/engine`, `feature/agents`), merged at each checkpoint.
+- Keep the API key in `OPENROUTER_API_KEY`, never in commits. Git-ignore `sim/runs/` and `.env`.
 
-## Draft schedule (about 3 elapsed hours)
+## Person A — engine
 
-The clock starts once the repo, OpenRouter credits, and Python environment are ready.
+- [ ] `menu.json` (burger, fries, modifiers, pack/verify), `scenario.json` (10 orders and 3 variants), state shape
+- [ ] Task generation from recipes and modifiers
+- [ ] Validation and atomic reservation, with rejection reasons
+- [ ] Tick clock, completion, ingredient consumption, worker history
+- [ ] `det` policy
+- [ ] Disruption (interrupt and release) and blocker detection
+- [ ] Order verification and the `correct` / `on_time` metrics
+- [ ] `events.jsonl`, per-tick snapshots
+- [ ] pytest scenarios 1–7 from the plan §9
 
-| Elapsed time | Person A | Person B | Checkpoint |
-|---|---|---|---|
-| 0–15 min | Draft `world.md` and `target.md` templates | Draft agent file and proposal templates | Agree the file formats |
-| 15–60 min | Orchestrator loop, clock, validation, reservations (deterministic policy) | Four agent profiles, OpenRouter call with strict schema | One order completes; one AI proposal parsed |
-| 60–100 min | Completion, order verification, event log, snapshots | Connect model proposals to the loop, record decisions | Real AI starts and completes tasks |
-| 100–140 min | Ten-order scenario, disruption and interrupted-task recovery | Prompt tuning, wait/blocker handling, error handling | Baseline and disruption runs |
-| 140–170 min | Critical pytest scenarios, fixes | Replay mode and simple viewer | Inspectable, replayable run |
-| 170–180 min | Fresh-run and reset checks | Documentation | Verified `v0.1-draft` |
+## Person B — agents and visibility
 
-If behind at minute 100, stop viewer and polish work. Do not weaken validation, hand-edit state to fake progress, silently replace AI decisions, or skip simulation timing. Record any remaining acceptance gaps.
+- [ ] `workers.json` (4 workers, backup grill skill) and 4 persona `.txt` files
+- [ ] Per-worker view builder (shape agreed with A)
+- [ ] `llm.py`: strict schema, timeout, one retry, a raised error, and a smoke test
+- [ ] `ai` policy, the re-ask round, and pausing on error; decision events with model and latency
+- [ ] `report.txt` generator
+- [ ] `resume` and `replay [--at T]` (pytest scenario 8)
+- [ ] README setup and demo steps
 
-## Person A — draft checklist
+## Release gate (`v0.1-draft`)
 
-- [ ] Define `world.md` and `target.md` structure (structured JSON blocks plus prose) and a representative fixture.
-- [ ] Seed two recipes, ten orders, ingredients, stations, and four workers.
-- [ ] Build item-level dependency graphs plus order packing and verification.
-- [ ] Parse and strictly validate `world.md` and proposal files; reject malformed input.
-- [ ] Implement one-at-a-time validation, atomic reservations, versioning, and rejection with reasons.
-- [ ] Implement the discrete-event clock, proficiency durations, completion, and resource release.
-- [ ] Update agent files (current state, last result, history) from the orchestrator only.
-- [ ] Add start/pause/step/reset CLI commands and stale-proposal protection.
-- [ ] Add baseline and disruption scenarios with interruption rollback.
-- [ ] Add blockers, correctness/timeliness metrics, and terminal outcomes.
-- [ ] Append `log/events.md` and write per-tick snapshots.
-- [ ] Add deterministic test policy (explicitly selected) and critical pytest scenarios from the plan.
-
-## Person B — draft checklist
-
-- [ ] Write four agent files with distinct backgrounds and explicit structured capabilities.
-- [ ] Write worker prompts that include the agent's background and capabilities.
-- [ ] Implement strict-schema OpenRouter calls with timeout, bounded retry, and explicit errors.
-- [ ] Verify a schema-response smoke test before integration.
-- [ ] Parse proposals into `proposals/<name>.md` and hand them to the orchestrator.
-- [ ] Record model identity, action, explanation, latency, and usage metadata.
-- [ ] Show AI/deterministic/replay mode and provider failures clearly.
-- [ ] Build replay over `log/snapshots/` and `log/events.md` with no model calls.
-- [ ] Build a simple viewer (terminal summary or static page reading the files).
-- [ ] Verify baseline and disruption demonstrations.
-- [ ] Update documentation with actual setup and demo steps.
-
-## Shared draft release gate
-
-- [ ] A fresh run produces `world.md`, agent files, a log, and snapshots from the seed files.
-- [ ] Four distinct worker profiles independently choose recorded AI actions.
-- [ ] Concurrent tasks respect qualifications, dependencies, inventory, and station capacity.
-- [ ] Task durations and order correctness are enforced by the orchestrator.
-- [ ] Worker unavailability releases resources and supports qualified reassignment.
-- [ ] Pause, step, reset, and stale-proposal handling pass verification.
-- [ ] A recording can be replayed without model calls.
-- [ ] Critical tests pass; any omissions are explicitly documented.
-- [ ] Tag `v0.1-draft` after verification.
-
-## Finalization after the draft
-
-| Work | Owner | Estimate |
-|---|---|---|
-| Expand engine tests and fix failures | Person A | 3–4 hours |
-| Prompt quality, repeated-wait handling, decision diagnostics | Person B | 2–3 hours |
-| Scenario selection, replay filtering, viewer polish | Person B | 2–3 hours |
-| Fresh-setup verification, final demo, handoff docs | Both | 3–4 total person-hours |
-
-- [ ] Verify all original brief requirements against implemented behavior.
-- [ ] Preserve baseline and disruption recordings.
-- [ ] Document file formats, configuration, and failure behavior accurately.
-- [ ] Test the demo from a fresh clone.
-- [ ] Publish repository handoff and a three-minute demonstration.
-- [ ] Tag `v1.0-demo` after final acceptance.
-- [ ] Optional: web dashboard and hosting reading the same files.
-
-## Estimates and confidence
-
-| Deliverable | Completion estimate | Confidence |
-|---|---|---|
-| First draft | 3 elapsed hours; 6 person-hours | 60/100 |
-| Draft with contingency | 5 elapsed hours; 10 person-hours | 85/100 |
-| Finalized demo | Additional 10–14 person-hours | 70/100 |
-
-Confidence scores are engineering judgments, conditional on experience, AI coding assistance, ready API credits, and model availability. They are not measured probabilities or a claim that implementation is complete.
+- [ ] A fresh clone runs `baseline`, `disruption`, and `blocker` in `det` mode
+- [ ] An `ai` baseline run is recorded honestly, whether or not it meets the target
+- [ ] Tests pass; any gaps are listed in the README
