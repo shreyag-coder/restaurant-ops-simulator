@@ -449,7 +449,19 @@ _STEP_WORDS = {
     "fry": ("fry", "frying", "fried"),
     "pack": ("pack", "packing", "packed"),
     "verify": ("check", "checking", "checked"),
+    # Burrito-line kitchen (sim/config_chipotle)
+    "protein": ("grill the protein", "grilling the protein", "grilled the protein"),
+    "tortilla": ("warm the tortilla", "warming the tortilla", "warmed the tortilla"),
+    "build": ("build", "building", "built"),
+    "roll": ("roll", "rolling", "rolled"),
+    "chips": ("fry the chips", "frying the chips", "fried the chips"),
+    "guac": ("mash the guac", "mashing the guac", "mashed the guac"),
+    "portion": ("portion", "portioning", "portioned"),
 }
+# Steps whose verb takes the item directly ("build O2's bowl"), not "for O2's bowl".
+_DIRECT_STEPS = ("fry", "assemble", "build", "roll", "portion")
+# Steps whose verb already names the station ("grill the protein").
+_STATION_IN_VERB = ("patty", "fry", "protein", "chips")
 
 _REASON_WORDS = {
     "Station is unavailable or full": "the {station} is full right now",
@@ -474,7 +486,7 @@ def _name(state, worker_id):
 
 
 def _plural(recipe, qty):
-    if qty == 1:
+    if qty == 1 or " " in recipe:  # "2 chips and guac", not "guacs"
         return recipe
     return recipe if recipe.endswith("s") else recipe + "s"
 
@@ -484,7 +496,7 @@ def _order_items_phrase(order):
     for item in order.get("items") or []:
         if not isinstance(item, dict):
             continue
-        recipe = str(_first(item, "recipe", "recipe_id", "item_id", "dish", "name") or "item")
+        recipe = str(_first(item, "recipe", "recipe_id", "item_id", "dish", "name") or "item").replace("_", " ")
         qty = _first(item, "quantity", "qty") or 1
         text = "%s %s" % (qty, _plural(recipe, qty))
         mods = [str(m).replace("_", " ") for m in item.get("modifiers") or []]
@@ -503,7 +515,7 @@ def _item_phrase(state, order_id, item_id):
     item = expected.get(item_id) or {}
     recipe = item.get("recipe_id") or item.get("recipe") or "item"
     same = [i for i in expected.values() if (i.get("recipe_id") or i.get("recipe")) == recipe]
-    label = "%s's %s" % (order_id, recipe)
+    label = "%s's %s" % (order_id, str(recipe).replace("_", " "))
     if len(same) > 1:
         suffix = re.sub(r"^\D*", "", str(item_id).rsplit(".", 1)[-1])
         if suffix:
@@ -522,13 +534,13 @@ def _task_phrase(state, task_id, form):
         return "%s order %s" % (verb, order_id)
     verb = words[form] if words else "work on"
     target = _item_phrase(state, order_id, task.get("item_id")) if task.get("item_id") else task_id
-    return "%s %s" % (verb, ("for " + target) if step not in ("fry", "assemble") else target)
+    return "%s %s" % (verb, ("for " + target) if step not in _DIRECT_STEPS else target)
 
 
 def _at_station(state, task_id):
     """" at the packing counter" unless the verb already names the station."""
     task = (state.get("tasks") or {}).get(task_id) or {}
-    if task.get("step_id") in ("patty", "fry"):
+    if task.get("step_id") in _STATION_IN_VERB:
         return ""
     return " at the " + _station_name(state, task_id)
 
@@ -732,6 +744,8 @@ def narrate_events(state, events, owners=None):
         elif etype == "stock_changed":
             out.append("Manager: %s stock changed from %s to %s." % (
                 str(p.get("ingredient_id")).capitalize(), _fmt(p.get("before")), _fmt(p.get("after"))))
+        elif etype == "operator_command":
+            out.append('Manager (dashboard): "%s" -> %s' % (p.get("text"), p.get("description") or "queued"))
         elif etype == "announcement":
             out.append('Manager: "%s"' % p.get("text"))
         elif etype == "blocker":
@@ -760,7 +774,25 @@ def narrate_events(state, events, owners=None):
                 tick = e.get("tick")
                 lines += ["", "--- Minute %s ---" % tick]
             lines += out
-    return lines
+    return [_with_order_names(state, line) for line in lines]
+
+
+def _order_label(order, order_id):
+    customer, ticket = order.get("customer"), order.get("ticket")
+    if customer and ticket:
+        return "%s #%s" % (customer, ticket)
+    return "#%s" % ticket if ticket else order_id
+
+
+def _with_order_names(state, line):
+    """Say "Maya #101" instead of "O1" when the order has a customer or ticket."""
+    orders = state.get("orders") if isinstance(state.get("orders"), dict) else {}
+    names = {oid: _order_label(o, oid) for oid, o in orders.items()
+             if isinstance(o, dict) and (o.get("customer") or o.get("ticket"))}
+    if not names or not isinstance(line, str):
+        return line
+    pattern = r"(?<![\w.])(%s)(?!\w|\.\w)" % "|".join(re.escape(k) for k in sorted(names, key=len, reverse=True))
+    return re.sub(pattern, lambda m: names[m.group(1)], line)
 
 
 def story_header(state):

@@ -58,6 +58,23 @@ Estimates are engineering judgments, not measurements.
 
 These are four coding assignments, separate from the four simulated workers. Only Agent 1 edits `orchestrator.py`; helpers use ordinary imports and the orchestrator remains the only state writer. Each agent owns separate files and tests; see TASKS.md. The estimates above retain their original two-contributor assumptions and should be revisited after the first integrated order.
 
+## Burrito-line crew (Chipotle-style)
+
+A second, larger kitchen modeled on a fast-casual burrito line. It lives in `sim/config_chipotle/` and `sim/personas_chipotle/`, and the default burger kitchen is unchanged.
+
+- **Menu:** burritos, bowls, three soft tacos, and chips & guac. Modifiers include steak, sofritas, veggie, no beans, no cheese, no rice, and salsa instead of guac.
+- **Stations:** grill, tortilla press, back-of-house prep, chip fryer, serving line, expo/bagging, and pickup shelf.
+- **Crew of 10:** kitchen manager, grill cook, prep cook, tortilla station, line server, digital make line, expo, cashier, service manager, and a second-week trainee.
+- **Worker profiles:** each worker in `workers.json` can carry an optional `profile` (experience, background, home station, shift, certifications, strengths, watch-outs). The profile is descriptive only: `skills` alone decide which tasks a worker may start.
+- **16 orders in 30 minutes.** In det mode, baseline finishes at minute 25 and disruption (grill cook out at minute 5, kitchen manager covers) finishes at minute 29. In the blocker variant the kitchen manager has no grill skill, so only 7 of 16 orders finish, with grill blockers.
+
+```
+python orchestrator.py run --scenario disruption --mode det \
+    --config-dir sim/config_chipotle --personas-dir sim/personas_chipotle
+```
+
+In AI mode, up to ten idle workers can be asked each minute, so expect noticeably more model calls than with the four-worker kitchen.
+
 ## Planned demonstration
 
 Run ten orders against a 30-minute target and read the decisions and reservations in `report.txt` and `events.jsonl`. Make the grill cook unavailable at minute 5 and watch the backup take over. Remove the backup's skill to see an explicit blocker. Finally, replay the run without any model calls.

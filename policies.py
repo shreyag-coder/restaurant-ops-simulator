@@ -104,6 +104,42 @@ def _dependency_ready_tasks(state):
 # Views
 # --------------------------------------------------------------------------
 
+def order_name(state, order_id):
+    """What people call an order: "Maya #101" (customer and ticket), else "Order 1"."""
+    order = state.get("orders", {}).get(order_id) or {}
+    customer, ticket = order.get("customer"), order.get("ticket")
+    if customer and ticket:
+        return "%s #%s" % (customer, ticket)
+    if ticket:
+        return "#%s" % ticket
+    digits = "".join(ch for ch in str(order_id) if ch.isdigit())
+    return "Order %s" % digits if digits else str(order_id)
+
+
+def task_name(state, task_id):
+    """Plain words for a task, e.g. "Build burrito for O6 (Burrito #2)".
+
+    Used in worker views so AI explanations can talk like a kitchen instead
+    of quoting ids like "O6.bu2.build".
+    """
+    task = state.get("tasks", {}).get(task_id)
+    if not task:
+        return task_id
+    menu = (state.get("config") or {}).get("menu") or {}
+    order = state.get("orders", {}).get(task["order_id"], {})
+    if not task.get("item_id"):
+        step = next((s.get("name") for s in menu.get("order_steps", []) if s.get("id") == task["step_id"]), None)
+        return "%s for %s" % (step or task["step_id"].replace("_", " ").capitalize(), order_name(state, task["order_id"]))
+    items = order.get("expected_items") or []
+    recipe_id = next((i.get("recipe_id") for i in items if i.get("item_id") == task["item_id"]), None)
+    recipe = (menu.get("recipes") or {}).get(recipe_id) or {}
+    step = next((s.get("name") for s in recipe.get("steps", []) if s.get("id") == task["step_id"]), None)
+    text = "%s for %s" % (step or task["step_id"].replace("_", " ").capitalize(), order_name(state, task["order_id"]))
+    if sum(1 for i in items if i.get("recipe_id") == recipe_id) > 1:
+        text += " (%s %s)" % (recipe.get("name") or recipe_id, str(task["item_id"]).rsplit(".", 1)[-1].lstrip("abcdefghijklmnopqrstuvwxyz"))
+    return text
+
+
 def build_worker_view(state, worker_id):
     """Return a detached, JSON-serializable view of the state for one worker.
 
@@ -135,7 +171,9 @@ def build_worker_view(state, worker_id):
         best = min(qualified) if qualified else None
         ready_tasks.append({
             "task_id": task["id"],
+            "task_name": task_name(state, task["id"]),
             "order_id": task["order_id"],
+            "order_name": order_name(state, task["order_id"]),
             "step_id": task["step_id"],
             "required_skill": skill,
             "station_id": task["station_id"],
@@ -151,12 +189,15 @@ def build_worker_view(state, worker_id):
         "time": state.get("time"),
         "deadline": state.get("deadline"),
         "worker_id": worker_id,
+        "my_name": me.get("name"),
         "skills": dict(sorted(my_skills.items())),
         "last_result": me.get("last_result"),
+        "team_messages": copy.deepcopy(state.get("team_messages", [])[-12:]),
         "ready_tasks": ready_tasks,
         "orders": [
             {
                 "order_id": oid,
+                "order_name": order_name(state, oid),
                 "deadline": orders[oid].get("deadline", state.get("deadline")),
                 "status": orders[oid].get("status"),
             }
@@ -165,9 +206,13 @@ def build_worker_view(state, worker_id):
         "other_workers": [
             {
                 "worker_id": wid,
+                "name": workers[wid].get("name"),
+                "role": workers[wid].get("role"),
                 "status": workers[wid].get("status"),
                 "available": _is_available(workers[wid]),
                 "current_task": workers[wid].get("current_task"),
+                "current_task_name": task_name(state, workers[wid]["current_task"])
+                if workers[wid].get("current_task") else None,
             }
             for wid in sorted(workers)
             if wid != worker_id

@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "ingredients": {
+    "chicken":        {"name": "Adobo chicken portion",   "unit": "portion", "stock": 12,  "location": "walk-in cooler"},
+    "steak":          {"name": "Steak portion",           "unit": "portion", "stock": 6,   "location": "walk-in cooler"},
+    "sofritas":       {"name": "Sofritas portion",        "unit": "portion", "stock": 3,   "location": "walk-in cooler"},
+    "tortilla":       {"name": "Flour tortilla (13 in)",  "unit": "piece",   "stock": 10,  "location": "tortilla shelf"},
+    "taco_tortilla":  {"name": "Soft taco tortilla",      "unit": "piece",   "stock": 12,  "location": "tortilla shelf"},
+    "rice":           {"name": "Cilantro-lime rice",      "unit": "scoop",   "stock": 16,  "location": "line hot well"},
+    "beans":          {"name": "Black beans",             "unit": "scoop",   "stock": 16,  "location": "line hot well"},
+    "salsa":          {"name": "Fresh tomato salsa",      "unit": "scoop",   "stock": 24,  "location": "line cold well"},
+    "cheese":         {"name": "Shredded cheese",         "unit": "pinch",   "stock": 16,  "location": "line cold well"},
+    "lettuce":        {"name": "Romaine lettuce",         "unit": "pinch",   "stock": 16,  "location": "line cold well"},
+    "avocado":        {"name": "Hass avocado",            "unit": "piece",   "stock": 12,  "location": "prep cooler"},
+    "chip_tortilla":  {"name": "Corn tortilla for chips", "unit": "piece",   "stock": 20,  "location": "dry storage"},
+    "lime":           {"name": "Lime wedge",              "unit": "wedge",   "stock": 6,   "location": "prep cooler"},
+    "chip_cup":       {"name": "Chips & guac container",  "unit": "piece",   "stock": 6,   "location": "prep shelf"},
+    "foil":           {"name": "Burrito foil sheet",      "unit": "sheet",   "stock": 10,  "location": "line shelf"},
+    "bowl":           {"name": "Bowl with lid",           "unit": "piece",   "stock": 10,  "location": "line shelf"},
+    "bag":            {"name": "Paper to-go bag",         "unit": "piece",   "stock": 18,  "location": "expo shelf"}
+  },
+  "stations": {
+    "grill":    {"name": "Grill",                 "type": "grill",    "equipment": ["flat-top plancha", "cutting board", "hotel pans"],   "capacity": 2},
+    "tortilla": {"name": "Tortilla press",        "type": "tortilla", "equipment": ["tortilla press", "tortilla warmer"],              "capacity": 1},
+    "prep":     {"name": "Back-of-house prep",    "type": "prep",     "equipment": ["guac mixing bowl", "cutting board", "lime press"], "capacity": 2},
+    "fryer":    {"name": "Chip fryer",            "type": "fryer",    "equipment": ["chip fryer", "seasoning bin"],                    "capacity": 1},
+    "line":     {"name": "Serving line",          "type": "assembly", "equipment": ["hot wells", "cold wells", "foil station"],         "capacity": 3},
+    "expo":     {"name": "Expo and bagging",      "type": "packing",  "equipment": ["bagging counter", "label printer"],               "capacity": 2},
+    "pickup":   {"name": "Pickup shelf",          "type": "pickup",   "equipment": ["pickup shelf", "order tablet"],                   "capacity": 1}
+  },
+  "recipes": {
+    "burrito": {
+      "name": "Burrito",
+      "item_prefix": "bu",
+      "steps": [
+        {"id": "protein",  "name": "Grill and chop protein", "skill": "grill",    "station": "grill",    "minutes": 2, "ingredients": {"chicken": 1},                                    "depends_on": []},
+        {"id": "tortilla", "name": "Press and warm tortilla", "skill": "tortilla", "station": "tortilla", "minutes": 1, "ingredients": {"tortilla": 1},                                   "depends_on": []},
+        {"id": "build",    "name": "Build burrito",           "skill": "line",     "station": "line",     "minutes": 1, "ingredients": {"rice": 1, "beans": 1, "salsa": 1, "cheese": 1}, "depends_on": ["protein", "tortilla"]},
+        {"id": "roll",     "name": "Roll and foil burrito",   "skill": "line",     "station": "line",     "minutes": 1, "ingredients": {"foil": 1},                                       "depends_on": ["build"]}
+      ],
+      "modifiers": {
+        "steak":     {"label": "Steak",          "set_ingredients": {"protein": {"chicken": 0, "steak": 1}}},
+        "sofritas":  {"label": "Sofritas",       "set_ingredients": {"protein": {"chicken": 0, "sofritas": 1}}},
+        "veggie":    {"label": "Veggie (no protein)", "skip_steps": ["protein"]},
+        "no_beans":  {"label": "No beans",       "set_ingredients": {"build": {"beans": 0}}},
+        "no_cheese": {"label": "No cheese",      "set_ingredients": {"build": {"cheese": 0}}}
+      }
+    },
+    "bowl": {
+      "name": "Burrito bowl",
+      "item_prefix": "bw",
+      "steps": [
+        {"id": "protein", "name": "Grill and chop protein", "skill": "grill", "station": "grill", "minutes": 2, "ingredients": {"chicken": 1},                                                 "depends_on": []},
+        {"id": "build",   "name": "Build bowl",             "skill": "line",  "station": "line",  "minutes": 1, "ingredients": {"rice": 1, "beans": 1, "salsa": 1, "lettuce": 1, "bowl": 1}, "depends_on": ["protein"]}
+      ],
+      "modifiers": {
+        "steak":   {"label": "Steak",               "set_ingredients": {"protein": {"chicken": 0, "steak": 1}}},
+        "veggie":  {"label": "Veggie (no protein)", "skip_steps": ["protein"]},
+        "no_rice": {"label": "No rice",             "set_ingredients": {"build": {"rice": 0}}}
+      }
+    },
+    "tacos": {
+      "name": "Three soft tacos",
+      "item_prefix": "ta",
+      "steps": [
+        {"id": "protein",  "name": "Grill and chop protein", "skill": "grill",    "station": "grill",    "minutes": 2, "ingredients": {"chicken": 1},                             "depends_on": []},
+        {"id": "tortilla", "name": "Warm three tortillas",   "skill": "tortilla", "station": "tortilla", "minutes": 1, "ingredients": {"taco_tortilla": 3},                       "depends_on": []},
+        {"id": "build",    "name": "Build tacos",            "skill": "line",     "station": "line",     "minutes": 1, "ingredients": {"salsa": 1, "cheese": 1, "lettuce": 1},    "depends_on": ["protein", "tortilla"]}
+      ],
+      "modifiers": {
+        "steak":     {"label": "Steak",     "set_ingredients": {"protein": {"chicken": 0, "steak": 1}}},
+        "no_cheese": {"label": "No cheese", "set_ingredients": {"build": {"cheese": 0}}}
+      }
+    },
+    "chips_and_guac": {
+      "name": "Chips and guacamole",
+      "item_prefix": "cg",
+      "steps": [
+        {"id": "chips",   "name": "Fry and season chips",  "skill": "fry",  "station": "fryer", "minutes": 2, "ingredients": {"chip_tortilla": 3, "lime": 1}, "depends_on": []},
+        {"id": "guac",    "name": "Mash guacamole",        "skill": "prep", "station": "prep",  "minutes": 2, "ingredients": {"avocado": 2},                  "depends_on": []},
+        {"id": "portion", "name": "Portion chips and dip", "skill": "prep", "station": "prep",  "minutes": 1, "ingredients": {"chip_cup": 1},                 "depends_on": ["chips", "guac"]}
+      ],
+      "modifiers": {
+        "salsa_instead": {"label": "Salsa instead of guac", "skip_steps": ["guac"], "set_ingredients": {"portion": {"salsa": 1}}}
+      }
+    }
+  },
+  "order_steps": [
+    {"id": "pack",   "name": "Bag and label order",    "skill": "pack",   "station": "expo",   "minutes": 1, "ingredients": {"bag": 1}, "depends_on": [],       "after_items": true},
+    {"id": "verify", "name": "Check ticket and hand off", "skill": "verify", "station": "pickup", "minutes": 1, "ingredients": {},         "depends_on": ["pack"]}
+  ]
+}

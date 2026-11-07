@@ -10,3 +10,5 @@ __pycache__/
 htmlcov/
 sim/runs/
 .DS_Store
+# Generated replay Site has its own private source repository and recordings.
+/dashboard/replay-site/

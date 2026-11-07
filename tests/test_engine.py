@@ -541,3 +541,33 @@ def test_terminal_runs_cannot_resume():
     engine.run()
     with pytest.raises(ValueError, match="terminal"):
         engine.run()
+
+
+def test_help_is_a_real_shared_message_not_a_resource_mutation():
+    engine = admitted()
+    before = resources(engine)
+    proposal = {"action": "request_help", "task_id": "O1.0.0.patty",
+                "why": "Can another grill-qualified teammate take this order?"}
+    assert engine.apply_action("A", proposal)["accepted"]
+    assert resources(engine) == before
+    message = engine.state["team_messages"][-1]
+    assert message["text"] == proposal["why"] and message["audience"] == "team"
+    event = next(e for e in engine.pending_events if e["type"] == "worker_message")
+    assert event["payload"]["text"] == proposal["why"]
+    assert event["seq"] == message["seq"]
+    import policies
+    view = policies.build_worker_view(engine.snapshot(), "B")
+    assert view["team_messages"][-1]["worker_id"] == "A"
+    view["team_messages"][-1]["text"] = "Changed only in the detached view"
+    assert engine.state["team_messages"][-1]["text"] == proposal["why"]
+
+
+def test_invalid_help_does_not_broadcast_and_old_checkpoints_support_messages():
+    engine = admitted()
+    engine.state.pop("team_messages")
+    invalid = {"action": "request_help", "task_id": "unknown", "why": "Help"}
+    assert not engine.apply_action("A", invalid)["accepted"]
+    assert "team_messages" not in engine.state
+    valid = {"action": "report_blocker", "task_id": "O1.0.0.patty", "why": "The grill needs attention."}
+    assert engine.apply_action("A", valid)["accepted"]
+    assert engine.state["team_messages"][-1]["kind"] == "report_blocker"

@@ -6,28 +6,110 @@
       "name": "Dana",
       "role": "Grill cook",
       "description": "Experienced grill cook who can also prepare toppings, though more slowly than the prep specialist.",
-      "skills": {"grill": 1.0, "prep": 1.5}
+      "skills": {
+        "grill": 1.0,
+        "prep": 1.5
+      },
+      "profile": {
+        "experience_years": 12,
+        "background": "Lead line cook with twelve years behind a flat-top, most of them in high-volume burger joints. Runs the grill and helps on toppings when the board backs up.",
+        "home_station": "grill",
+        "shift": "Lunch (10:00 a.m. to 4:00 p.m.)",
+        "certifications": [
+          "ServSafe Food Handler",
+          "Grill certified"
+        ],
+        "strengths": [
+          "Starts the slowest, most deadline-critical patties first",
+          "Keeps the flat-top busy without letting cooked patties sit"
+        ],
+        "watch_outs": [
+          "Preps lettuce at 1.5x, so toppings go to Sam when he is free",
+          "The only full-time grill cook; if Dana steps away, Jordan has to cover"
+        ]
+      }
     },
     {
       "id": "w_prep",
       "name": "Sam",
       "role": "Prep specialist",
       "description": "Preparation specialist who prepares toppings and can assemble burgers.",
-      "skills": {"prep": 1.0, "assemble": 1.0}
+      "skills": {
+        "prep": 1.0,
+        "assemble": 1.0
+      },
+      "profile": {
+        "experience_years": 4,
+        "background": "Came up through a sandwich shop before moving to the burger line. Owns mise en place and assembles burgers once the toppings are ready.",
+        "home_station": "prep",
+        "shift": "Lunch (10:00 a.m. to 4:00 p.m.)",
+        "certifications": [
+          "ServSafe Food Handler"
+        ],
+        "strengths": [
+          "Keeps the line fed with ready toppings",
+          "Fills gaps instead of duplicating someone else's work"
+        ],
+        "watch_outs": [
+          "Not trained on the grill or fryer, so can't cover either"
+        ]
+      }
     },
     {
       "id": "w_fry",
       "name": "Riley",
       "role": "Fry cook",
       "description": "Runs the fryer and packs finished orders.",
-      "skills": {"fry": 1.0, "pack": 1.0}
+      "skills": {
+        "fry": 1.0,
+        "pack": 1.0
+      },
+      "profile": {
+        "experience_years": 2,
+        "background": "Two years on the fryer and the pass. Likes short, repeatable tasks and pushes nearly finished orders out the door.",
+        "home_station": "fryer",
+        "shift": "Mid (11:00 a.m. to 7:00 p.m.)",
+        "certifications": [
+          "ServSafe Food Handler",
+          "Fryer safety trained"
+        ],
+        "strengths": [
+          "Keeps fries coming on a one-basket fryer",
+          "Packs finished orders before food goes cold"
+        ],
+        "watch_outs": [
+          "Can't grill, prep, assemble, or verify; idle when the fryer and packing are clear"
+        ]
+      }
     },
     {
       "id": "w_expo",
       "name": "Jordan",
       "role": "Expediter",
       "description": "Assembles, packs, and verifies orders for pickup. Cross-trained as the backup grill cook.",
-      "skills": {"assemble": 1.0, "pack": 1.0, "verify": 1.0, "grill": 1.0}
+      "skills": {
+        "assemble": 1.0,
+        "pack": 1.0,
+        "verify": 1.0,
+        "grill": 1.0
+      },
+      "profile": {
+        "experience_years": 5,
+        "background": "Ran the pass at a busy diner for five years. Assembles, packs, and verifies every order, and is cross-trained as the backup grill cook.",
+        "home_station": "pickup",
+        "shift": "Lunch (10:00 a.m. to 4:00 p.m.)",
+        "certifications": [
+          "ServSafe Food Handler",
+          "Grill certified"
+        ],
+        "strengths": [
+          "Watches the whole board and calls out stuck orders",
+          "The only worker who can verify orders, and the grill backup"
+        ],
+        "watch_outs": [
+          "Covering the grill leaves no one to verify, so pickups queue up"
+        ]
+      }
     }
   ]
 }

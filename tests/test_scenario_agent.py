@@ -197,7 +197,7 @@ def test_order_deadline_change():
         engine.queue_command({"type": "order_deadline", "order_id": "O2", "deadline_minutes": 99})
     engine.run(1)
     assert engine.state["orders"]["O2"]["deadline_minutes"] == 9
-    assert "Order O2 is now due by minute 9 (was 14)" in "\n".join(
+    assert "Order Brooke #202 is now due by minute 9 (was 14)" in "\n".join(
         narrate_events(engine.snapshot(), engine.pending_events))
 
 

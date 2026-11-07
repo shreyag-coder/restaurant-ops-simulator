@@ -1,0 +1,165 @@
+{
+  "schema_version": 1,
+  "workers": [
+    {
+      "id": "w_km",
+      "name": "Marisol",
+      "role": "Kitchen Manager",
+      "description": "Runs the back of house. Fully cross-trained on grill, prep, and chips, and the designated grill backup when the grill cook steps away.",
+      "skills": {"grill": 1.0, "prep": 1.0, "fry": 1.0},
+      "profile": {
+        "experience_years": 9,
+        "background": "Started as a prep crew member, moved to grill after a year, and has been kitchen manager for four years. Trains every new grill cook in the store.",
+        "home_station": "prep",
+        "shift": "Opener (6:30 a.m. to 3:00 p.m.)",
+        "certifications": ["ServSafe Manager", "Grill certified", "Kitchen trainer"],
+        "strengths": ["Covers any back-of-house station at full speed", "Keeps protein ahead of the line during a rush"],
+        "watch_outs": ["Will drop prep work to cover the grill, so guac can fall behind"]
+      }
+    },
+    {
+      "id": "w_grill",
+      "name": "Tomas",
+      "role": "Grill cook",
+      "description": "Dedicated grill cook who cooks and chops chicken, steak, and sofritas. Can help with prep, though more slowly than the prep cook.",
+      "skills": {"grill": 1.0, "prep": 1.5},
+      "profile": {
+        "experience_years": 6,
+        "background": "Six years on the plancha across two fast-casual stores. Known for keeping the hot wells full without overcooking.",
+        "home_station": "grill",
+        "shift": "Lunch (10:00 a.m. to 4:00 p.m.)",
+        "certifications": ["ServSafe Food Handler", "Grill certified"],
+        "strengths": ["Fastest protein turnaround in the store", "Batches steak and chicken to match the order board"],
+        "watch_outs": ["Slower on prep; leaves guac to the prep cook when one is free"]
+      }
+    },
+    {
+      "id": "w_prep",
+      "name": "Aisha",
+      "role": "Prep cook",
+      "description": "Back-of-house prep cook who mashes guacamole, portions sides, and runs the chip fryer.",
+      "skills": {"prep": 1.0, "fry": 1.0},
+      "profile": {
+        "experience_years": 3,
+        "background": "Came from a catering kitchen. Owns the morning prep list and guacamole quality.",
+        "home_station": "prep",
+        "shift": "Opener (7:00 a.m. to 3:30 p.m.)",
+        "certifications": ["ServSafe Food Handler", "Knife safety"],
+        "strengths": ["Consistent guac and chip batches", "Keeps the fryer and prep counter running in parallel"],
+        "watch_outs": ["Not trained on the grill; cannot cover protein"]
+      }
+    },
+    {
+      "id": "w_tortilla",
+      "name": "Kenji",
+      "role": "Tortilla press cook",
+      "description": "Starts the line by pressing and warming tortillas for burritos and tacos. Can help build on the line, but more slowly than the servers.",
+      "skills": {"tortilla": 1.0, "line": 1.5},
+      "profile": {
+        "experience_years": 1,
+        "background": "One year on the crew. Took over the tortilla press after mastering the timing for 13-inch tortillas.",
+        "home_station": "tortilla",
+        "shift": "Lunch (10:30 a.m. to 3:00 p.m.)",
+        "certifications": ["ServSafe Food Handler"],
+        "strengths": ["Keeps warm tortillas ready ahead of the builders"],
+        "watch_outs": ["Slower building and rolling than the line servers"]
+      }
+    },
+    {
+      "id": "w_line",
+      "name": "Bri",
+      "role": "Line server",
+      "description": "Front-line server who builds burritos, bowls, and tacos and rolls burritos in foil. Also trained on the tortilla press.",
+      "skills": {"line": 1.0, "tortilla": 1.0},
+      "profile": {
+        "experience_years": 4,
+        "background": "Four years on the serving line. Rolls a tight burrito on the first try and keeps portions consistent.",
+        "home_station": "line",
+        "shift": "Lunch (10:30 a.m. to 4:00 p.m.)",
+        "certifications": ["ServSafe Food Handler", "Line certified"],
+        "strengths": ["Quick, accurate builds and rolls", "Can jump to the tortilla press when it backs up"],
+        "watch_outs": ["No back-of-house training"]
+      }
+    },
+    {
+      "id": "w_dml",
+      "name": "Luis",
+      "role": "Digital make line",
+      "description": "Builds online and app orders on the digital make line, then bags them for pickup.",
+      "skills": {"line": 1.0, "pack": 1.0},
+      "profile": {
+        "experience_years": 2,
+        "background": "Two years on the crew, the last year on the digital make line. Reads tickets carefully because digital orders have the most modifiers.",
+        "home_station": "line",
+        "shift": "Lunch (11:00 a.m. to 3:00 p.m.)",
+        "certifications": ["ServSafe Food Handler", "Digital make line certified"],
+        "strengths": ["Accurate on modified orders", "Finishes builds through to the bag"],
+        "watch_outs": ["Cannot verify hand-off; leaves that to expo"]
+      }
+    },
+    {
+      "id": "w_expo",
+      "name": "Priya",
+      "role": "Expo and salsa",
+      "description": "Runs expo: bags orders, checks every ticket, and hands off at the pickup shelf. Can help build on the line when expo is caught up.",
+      "skills": {"pack": 1.0, "verify": 1.0, "line": 1.5},
+      "profile": {
+        "experience_years": 5,
+        "background": "Five years in fast casual, three running expo. Treats the pickup shelf as the last line of defense against a wrong order.",
+        "home_station": "expo",
+        "shift": "Lunch (10:30 a.m. to 3:30 p.m.)",
+        "certifications": ["ServSafe Food Handler", "Expo certified"],
+        "strengths": ["Spots missing items before they leave", "Keeps orders flowing out the door"],
+        "watch_outs": ["Slower on the line than the servers"]
+      }
+    },
+    {
+      "id": "w_cash",
+      "name": "Casey",
+      "role": "Cashier",
+      "description": "Rings up in-store guests and double-checks orders at the pickup shelf. Can bag in a pinch and help finish builds, but slowly.",
+      "skills": {"verify": 1.0, "pack": 1.5, "line": 2.0},
+      "profile": {
+        "experience_years": 1,
+        "background": "Front-counter cashier for a year. Knows the regulars and catches modifier mistakes at the register.",
+        "home_station": "pickup",
+        "shift": "Mid (11:00 a.m. to 2:30 p.m.)",
+        "certifications": ["ServSafe Food Handler", "Cash handling"],
+        "strengths": ["Careful final check", "Keeps the pickup shelf clear"],
+        "watch_outs": ["Half speed on the line; only builds when nobody faster can"]
+      }
+    },
+    {
+      "id": "w_svc",
+      "name": "Deshawn",
+      "role": "Service Manager",
+      "description": "Front-of-house manager who floats wherever the line or expo is backing up: tortilla, line, bagging, or the final check.",
+      "skills": {"line": 1.0, "tortilla": 1.0, "pack": 1.0, "verify": 1.0},
+      "profile": {
+        "experience_years": 7,
+        "background": "Came up from line server to service manager. Watches throughput and steps into whichever front-of-house station is the bottleneck.",
+        "home_station": "line",
+        "shift": "Lunch (10:00 a.m. to 6:00 p.m.)",
+        "certifications": ["ServSafe Manager", "Line certified", "Expo certified", "Front-of-house trainer"],
+        "strengths": ["Covers every front-of-house station at full speed", "Thinks about the whole order board"],
+        "watch_outs": ["No back-of-house training; cannot grill, prep, or fry"]
+      }
+    },
+    {
+      "id": "w_trainee",
+      "name": "Mia",
+      "role": "New crew member",
+      "description": "Second-week crew member learning the line and prep under supervision. Works at about half speed and bags a little slower than the regulars.",
+      "skills": {"line": 2.0, "prep": 2.0, "pack": 1.5},
+      "profile": {
+        "experience_years": 0,
+        "background": "Second week on the job, with no prior kitchen experience. Shadowing the line server and prep cook.",
+        "home_station": "line",
+        "shift": "Training (11:00 a.m. to 3:00 p.m.)",
+        "certifications": ["ServSafe Food Handler (in progress)"],
+        "strengths": ["Eager to take simple work off experienced crew"],
+        "watch_outs": ["Takes twice as long on builds and prep; should not take work a faster teammate can start"]
+      }
+    }
+  ]
+}

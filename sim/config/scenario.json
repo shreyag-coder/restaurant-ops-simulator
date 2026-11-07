@@ -7,16 +7,16 @@
     "description": "Complete all 10 orders correctly within 30 simulated minutes."
   },
   "orders": [
-    {"id": "O1",  "arrival": 0,  "deadline": 12, "items": [{"recipe": "burger", "quantity": 1, "modifiers": []},             {"recipe": "fries", "quantity": 1, "modifiers": []}]},
-    {"id": "O2",  "arrival": 0,  "deadline": 14, "items": [{"recipe": "burger", "quantity": 2, "modifiers": ["no_lettuce"]}, {"recipe": "fries", "quantity": 1, "modifiers": []}]},
-    {"id": "O3",  "arrival": 1,  "deadline": 16, "items": [{"recipe": "burger", "quantity": 1, "modifiers": ["extra_cheese"]}]},
-    {"id": "O4",  "arrival": 2,  "deadline": 15, "items": [{"recipe": "fries",  "quantity": 2, "modifiers": []}]},
-    {"id": "O5",  "arrival": 3,  "deadline": 18, "items": [{"recipe": "burger", "quantity": 1, "modifiers": ["no_cheese"]},  {"recipe": "fries", "quantity": 1, "modifiers": []}]},
-    {"id": "O6",  "arrival": 6,  "deadline": 22, "items": [{"recipe": "fries",  "quantity": 1, "modifiers": []}]},
-    {"id": "O7",  "arrival": 8,  "deadline": 24, "items": [{"recipe": "fries",  "quantity": 1, "modifiers": []}]},
-    {"id": "O8",  "arrival": 10, "deadline": 26, "items": [{"recipe": "burger", "quantity": 1, "modifiers": []},             {"recipe": "burger", "quantity": 1, "modifiers": ["no_cheese", "no_lettuce"]}]},
-    {"id": "O9",  "arrival": 12, "deadline": 28, "items": [{"recipe": "fries",  "quantity": 1, "modifiers": []}]},
-    {"id": "O10", "arrival": 14, "deadline": 30, "items": [{"recipe": "fries",  "quantity": 1, "modifiers": []}]}
+    {"id": "O1", "customer": "Alex", "ticket": 201, "arrival": 0,  "deadline": 12, "items": [{"recipe": "burger", "quantity": 1, "modifiers": []},             {"recipe": "fries", "quantity": 1, "modifiers": []}]},
+    {"id": "O2", "customer": "Brooke", "ticket": 202, "arrival": 0,  "deadline": 14, "items": [{"recipe": "burger", "quantity": 2, "modifiers": ["no_lettuce"]}, {"recipe": "fries", "quantity": 1, "modifiers": []}]},
+    {"id": "O3", "customer": "Carlos", "ticket": 203, "arrival": 1,  "deadline": 16, "items": [{"recipe": "burger", "quantity": 1, "modifiers": ["extra_cheese"]}]},
+    {"id": "O4", "customer": "Devi", "ticket": 204, "arrival": 2,  "deadline": 15, "items": [{"recipe": "fries",  "quantity": 2, "modifiers": []}]},
+    {"id": "O5", "customer": "Ethan", "ticket": 205, "arrival": 3,  "deadline": 18, "items": [{"recipe": "burger", "quantity": 1, "modifiers": ["no_cheese"]},  {"recipe": "fries", "quantity": 1, "modifiers": []}]},
+    {"id": "O6", "customer": "Fatima", "ticket": 206, "arrival": 6,  "deadline": 22, "items": [{"recipe": "fries",  "quantity": 1, "modifiers": []}]},
+    {"id": "O7", "customer": "Gabe", "ticket": 207, "arrival": 8,  "deadline": 24, "items": [{"recipe": "fries",  "quantity": 1, "modifiers": []}]},
+    {"id": "O8", "customer": "Ivy", "ticket": 208, "arrival": 10, "deadline": 26, "items": [{"recipe": "burger", "quantity": 1, "modifiers": []},             {"recipe": "burger", "quantity": 1, "modifiers": ["no_cheese", "no_lettuce"]}]},
+    {"id": "O9", "customer": "Kai", "ticket": 209, "arrival": 12, "deadline": 28, "items": [{"recipe": "fries",  "quantity": 1, "modifiers": []}]},
+    {"id": "O10", "customer": "Lena", "ticket": 210, "arrival": 14, "deadline": 30, "items": [{"recipe": "fries",  "quantity": 1, "modifiers": []}]}
   ],
   "variants": {
     "baseline": {

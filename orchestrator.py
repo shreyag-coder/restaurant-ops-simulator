@@ -143,6 +143,7 @@ def create_state(config, mode, run_id=None, model=None, personas=None):
         "workers": workers, "stations": stations, "ingredients": ingredients,
         "orders": orders, "tasks": {}, "produced_items": {},
         "scenario_events": events, "applied_events": [], "blockers": {},
+        "team_messages": [],
         "operator_queue": [], "announcements": [], "incidents": {},
         "last_event_seq": 0, "last_committed_seq": 0, "recent_events": [],
         "continuation": {"phase": "begin"},
@@ -297,6 +298,14 @@ class SimulationEngine:
             s["orders"][task["order_id"]]["status"] = "active"
             self._emit("task_started", worker_id=worker_id, task_id=task_id,
                        finishes_at=task["finishes_at"], ingredients=task["ingredients"])
+        if action in {"request_help", "report_blocker"}:
+            message = {"worker_id": worker_id, "task_id": task_id, "kind": action,
+                       "text": proposal["why"], "tick": s["time"], "mode": s["mode"],
+                       "audience": "team", "seq": s["last_event_seq"] + 1}
+            s.setdefault("team_messages", []).append(message)
+            # Bound prompt context while retaining every message in events.jsonl.
+            s["team_messages"] = s["team_messages"][-50:]
+            self._emit("worker_message", **message)
         result = {"accepted": True, "reason": "Accepted"}
         worker["last_result"] = result.copy()
         self._emit("action_accepted", worker_id=worker_id, task_id=task_id, proposal=proposal)
@@ -691,14 +700,45 @@ class SimulationEngine:
                                       "candidates": list(candidates), "views": copy.deepcopy(views),
                                       "decisions": {}, "cursor": 0, "rejected": []}
 
+    def _prefetch_decisions(self, c):
+        """AI mode: ask every remaining worker of this round at the same time.
+
+        All views in a round come from the same snapshot and proposals are
+        applied afterwards in the fixed candidate order, so asking in parallel
+        changes only the wall-clock time, not the outcome. Results (or the
+        exception) are handed to the in-order loop below, which validates and
+        records them exactly as before.
+        """
+        pending = [w for w in c["candidates"][c["cursor"]:] if w not in c["decisions"]]
+        if self.state["mode"] != "ai" or len(pending) < 2:
+            return {}
+        from concurrent.futures import ThreadPoolExecutor
+
+        def ask(worker_id):
+            try:
+                return worker_id, self.choose_decision(copy.deepcopy(c["views"][worker_id]), worker_id), None
+            except Exception as exc:  # re-raised in order by _decision_rounds
+                return worker_id, None, exc
+        with ThreadPoolExecutor(max_workers=min(8, len(pending))) as pool:
+            return {worker_id: (envelope, exc) for worker_id, envelope, exc in pool.map(ask, pending)}
+
     def _decision_rounds(self):
         s = self.state
         while s["continuation"]["phase"] in {"choose", "apply"}:
             c = s["continuation"]
+            prefetched = self._prefetch_decisions(c) if c["phase"] == "choose" else {}
             while c["phase"] == "choose" and c["cursor"] < len(c["candidates"]):
                 worker_id = c["candidates"][c["cursor"]]
+                if worker_id in c["decisions"]:  # answered before a pause; don't ask (or pay) twice
+                    c["cursor"] += 1
+                    continue
                 try:
-                    envelope = self.choose_decision(copy.deepcopy(c["views"][worker_id]), worker_id)
+                    if worker_id in prefetched:
+                        envelope, error = prefetched[worker_id]
+                        if error is not None:
+                            raise error
+                    else:
+                        envelope = self.choose_decision(copy.deepcopy(c["views"][worker_id]), worker_id)
                     _require(isinstance(envelope, dict) and envelope.get("mode") == s["mode"], "Policy mode mismatch")
                     _require("proposal" in envelope, "Policy did not return a proposal")
                     _require(s["mode"] != "ai" or envelope.get("model") == s["model"], "Policy model mismatch")
@@ -716,6 +756,9 @@ class SimulationEngine:
                     if _number(latency):
                         metadata["latency_ms"] = latency
                     self._emit("decision_error", worker_id=worker_id, mode=s["mode"], model=s["model"], error_type=type(exc).__name__, **metadata)
+                    for other, (envelope, error) in prefetched.items():
+                        if error is None and other != worker_id and other not in c["decisions"] and _valid_envelope(envelope, s):
+                            c["decisions"][other] = copy.deepcopy(envelope)
                     return
                 # Proposals themselves are validated by apply_action.
                 c["decisions"][worker_id] = copy.deepcopy(envelope)
@@ -787,6 +830,15 @@ class SimulationEngine:
         return self.snapshot()
 
 
+def _valid_envelope(envelope, s):
+    try:
+        json.dumps(envelope, allow_nan=False)
+    except (TypeError, ValueError):
+        return False
+    return (isinstance(envelope, dict) and envelope.get("mode") == s["mode"] and "proposal" in envelope
+            and (s["mode"] != "ai" or envelope.get("model") == s["model"]))
+
+
 @contextmanager
 def run_lock(run_dir):
     """OS advisory lock: automatically released even when a process crashes."""
@@ -848,6 +900,84 @@ def _live_narrator(reporting):
     return narrate
 
 
+def queue_operator_text(run_dir, text, scenario, policies, recording, interpret=None, apply_now=True):
+    """Apply one plain-English kitchen update ("Deshawn burnt his hand") to a paused run.
+
+    With ``interpret`` (the AI scenario agent), any message is translated into
+    concrete changes: a worker off or slowed down, a station broken or slow,
+    stock, orders, plus a note to the team. Without it, or if it fails, the
+    keyword parser from the live console is used. Either way the engine
+    validates every change (no invented skills, only real workers and
+    stations) and, with ``apply_now``, applies it immediately, in the current
+    minute, so the state changes right away. The run's writer lock is held,
+    so this never races a running tick.
+    """
+    live = _module("live")
+    _require(isinstance(text, str) and text.strip(), "Type a kitchen update first")
+    text = text.strip()[:300]
+    with run_lock(run_dir):
+        state = recording.load_checkpoint(run_dir)
+        _require(state["run_id"] == Path(run_dir).name, "Checkpoint run ID mismatch")
+        _require(state["last_event_seq"] == state["last_committed_seq"], "Incomplete checkpoint")
+        _require(state["status"] not in TERMINAL, "This shift has ended. Start a new run to send updates.")
+        _require(state["status"] == "paused", "Only paused runs accept kitchen updates")
+        try:
+            parsed = live.parse(text, state)
+        except ValueError as exc:
+            parsed, parse_error = None, str(exc)
+        else:
+            parse_error = None
+        _require(not parsed or parsed[0] == "command",
+                 "'%s' is a clock control. Use the Start and Pause buttons instead." % text)
+        engine = _engine_for(state, scenario, policies)
+        now = engine.state["time"]
+
+        def plain(command):
+            """Short, past-tense-free confirmation in kitchen words ("Chip fryer is out of service")."""
+            s = engine.state
+            if command["type"] == "station":
+                name = s["stations"][command["station_id"]].get("name") or command["station_id"]
+                return "%s is %s" % (name, "working again" if command["available"] else "out of service")
+            if command["type"] == "worker":
+                name = s["workers"][command["worker_id"]].get("name") or command["worker_id"]
+                return "%s is %s" % (name, "back on the floor" if command["available"] else "off the floor")
+            words = live.describe(command, s)
+            if apply_now:
+                return words.replace(" at minute %s" % s["next_tick"], " now").replace(" will be ", " is ")
+            return words
+
+        result, ai_error = None, None
+        if interpret is not None:
+            try:
+                result = interpret(text, engine.state)
+            except Exception as exc:  # fall back to the keyword parser; never invent a change
+                ai_error = type(exc).__name__
+        if result is not None:
+            note = {"text": text, "summary": result.get("summary"), "model": result.get("model"),
+                    "latency_ms": result.get("latency_ms")}
+            accepted, rejected = engine.queue_batch(result.get("changes") or [], note=note)
+            physical = [c for c in accepted if c["type"] != "announce"]
+            description = "; ".join(plain(c) for c in physical) or (result.get("summary") or "Passed on to the team")
+            payload = {"text": text, "interpreted_by": "ai", "model": result.get("model"),
+                       "summary": result.get("summary"), "changes": accepted,
+                       "rejected": [r["error"] for r in rejected], "description": description,
+                       "free_text": not physical, "command": physical[0] if physical else None}
+        else:
+            _require(parsed is not None, parse_error or "I couldn't understand that update")
+            queued = engine.queue_command(parsed[1])
+            free_text = bool(parsed[1].get("free_text"))
+            payload = {"text": text, "interpreted_by": "keywords", "command": queued,
+                       "changes": [queued], "rejected": [], "description": plain(queued),
+                       "free_text": free_text, "ai_error": ai_error}
+        payload.update(applies_at=now if apply_now else engine.state["next_tick"], source="operator")
+        engine._emit("operator_command", **payload)
+        if apply_now:
+            # Apply in the current minute: the state the dashboard shows changes right away.
+            engine._apply_operator_commands()
+        _checkpoint(engine, run_dir, recording)
+    return dict(payload, run_id=state["run_id"])
+
+
 def _select_run(root, run_id):
     if run_id:
         _require(Path(run_id).name == run_id and run_id not in {".", ".."}, "Invalid run ID")
@@ -880,6 +1010,11 @@ def main(argv=None):
                              help="Interactive mode: real seconds per simulated minute (default 2)")
         command.add_argument("--no-scenario-agent", action="store_true",
                              help="Interactive mode: never send free text to the AI scenario agent")
+    operator = sub.add_parser("command", help="Queue a kitchen update on a paused run, e.g. 'fryer is broken'")
+    operator.add_argument("--run")
+    operator.add_argument("--text", required=True)
+    operator.add_argument("--no-ai", action="store_true",
+                          help="Use only the keyword parser, even when OPENROUTER_API_KEY is set")
     replay = sub.add_parser("replay", help="Read a saved run without policies or networking")
     replay.add_argument("--run")
     replay.add_argument("--at", type=int)
@@ -891,6 +1026,16 @@ def main(argv=None):
             run_dir = _select_run(args.runs_dir, args.run)
             replay_module = _module("replay")
             print((replay_module.story_run if args.story else replay_module.replay_run)(run_dir, at=args.at))
+            return 0
+        if args.command == "command":
+            scenario, policies, recording = (_module(name) for name in ("scenario", "policies", "recording"))
+            interpret = None
+            if not args.no_ai and os.environ.get("OPENROUTER_API_KEY") and (
+                    os.environ.get("OPENROUTER_SCENARIO_MODEL") or os.environ.get("OPENROUTER_MODEL")):
+                interpret = _module("scenario_agent").interpret
+            result = queue_operator_text(_select_run(args.runs_dir, args.run), args.text,
+                                         scenario, policies, recording, interpret=interpret)
+            print(json.dumps(result, sort_keys=True))
             return 0
         _require(args.max_ticks is None or args.max_ticks > 0, "max_ticks must be positive")
         scenario, policies, recording = (_module(name) for name in ("scenario", "policies", "recording"))

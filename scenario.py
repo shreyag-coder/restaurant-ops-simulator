@@ -232,7 +232,7 @@ def _validate(config):
     menu = config["menu"]
     _check_keys(menu, ("ingredients", "stations", "recipes", "order_steps"), (), "menu")
     skills = _validate_menu(menu)
-    workers = _validate_workers(config["workers"], skills)
+    workers = _validate_workers(config["workers"], skills, menu["stations"])
 
     # Every skill a task can require must be held by at least one worker at the
     # start of the run (after overrides). Missing skills later, from events,
@@ -246,6 +246,8 @@ def _validate(config):
     _require(len(orders) == target["orders"],
              f"target.orders is {target['orders']} but {len(orders)} orders are defined")
     expansions = {}
+    tickets = [order.get("ticket") for order in orders if isinstance(order, dict) and "ticket" in order]
+    _require(len(tickets) == len(set(map(str, tickets))), "order ticket numbers must be unique")
     for order in orders:
         _validate_order_fields(order, deadline)
         _require(order["id"] not in expansions, f"duplicate order id {order['id']!r}")
@@ -429,13 +431,36 @@ def _final_steps(steps):
     return [step["id"] for step in steps if step["id"] not in used]
 
 
-def _validate_workers(workers, skills):
+def _validate_profile(profile, stations, where):
+    """Optional descriptive detail about a worker. It never grants abilities:
+    only `skills` decides which tasks a worker may start."""
+    where = f"{where}.profile"
+    _check_keys(profile, ("experience_years", "background", "home_station"),
+                ("shift", "certifications", "strengths", "watch_outs"), where)
+    _require(_is_int(profile["experience_years"]) and profile["experience_years"] >= 0,
+             f"{where}.experience_years must be a non-negative integer")
+    _check_text(profile["background"], f"{where}.background")
+    _require(profile["home_station"] in stations,
+             f"{where}: unknown home_station {profile['home_station']!r}")
+    if "shift" in profile:
+        _check_text(profile["shift"], f"{where}.shift")
+    for field in ("certifications", "strengths", "watch_outs"):
+        if field in profile:
+            values = profile[field]
+            _require(isinstance(values, list)
+                     and all(isinstance(v, str) and v.strip() for v in values),
+                     f"{where}.{field} must be a list of non-empty text")
+
+
+def _validate_workers(workers, skills, stations):
     _require(isinstance(workers, list) and workers, "workers must be a non-empty list")
     seen = set()
     for worker in workers:
         _require(isinstance(worker, dict), "each worker must be an object")
         where = f"worker {worker.get('id')!r}"
-        _check_keys(worker, ("id", "name", "role", "description", "skills"), (), where)
+        _check_keys(worker, ("id", "name", "role", "description", "skills"), ("profile",), where)
+        if "profile" in worker:
+            _validate_profile(worker["profile"], stations, where)
         _check_id(worker["id"], where)
         _require(worker["id"] not in seen, f"duplicate worker id {worker['id']!r}")
         seen.add(worker["id"])
@@ -456,8 +481,14 @@ def _validate_workers(workers, skills):
 def _validate_order_fields(order, deadline):
     _require(isinstance(order, dict), "each order must be an object")
     where = f"order {order.get('id')!r}"
-    _check_keys(order, ("id", "arrival", "deadline", "items"), (), where)
+    # customer/ticket are what people see ("Maya #101"); the id stays the internal key.
+    _check_keys(order, ("id", "arrival", "deadline", "items"), ("customer", "ticket"), where)
     _check_id(order["id"], where, _ORDER_ID)
+    if "customer" in order:
+        _check_text(order["customer"], f"{where}.customer")
+        _require(len(order["customer"]) <= 40, f"{where}.customer must be at most 40 characters")
+    if "ticket" in order:
+        _require(_is_int(order["ticket"]) and order["ticket"] > 0, f"{where}.ticket must be a positive integer")
     _require(_is_int(order["arrival"]) and order["arrival"] >= 0,
              f"{where}.arrival must be a non-negative integer minute")
     _require(_is_int(order["deadline"]) and order["arrival"] < order["deadline"] <= deadline,

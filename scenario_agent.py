@@ -18,7 +18,7 @@ import time
 from llm import _AttemptFailure, _post, _sanitize, urllib_transport
 
 MAX_ATTEMPTS = 2
-MAX_TOKENS = 2000
+MAX_TOKENS = 4000  # a kitchen-wide event touches every station; 2000 truncated
 NON_RETRYABLE_STATUS = (400, 401, 402, 403, 404)
 
 CHANGE_TYPES = ["station_available", "station_capacity", "station_speed", "worker_available",

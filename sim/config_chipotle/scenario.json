@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "name": "Burrito line lunch rush",
+  "target": {
+    "orders": 16,
+    "deadline": 30,
+    "description": "Complete all 16 in-store and digital orders correctly within 30 simulated minutes."
+  },
+  "orders": [
+    {"id": "O1", "customer": "Maya", "ticket": 101, "arrival": 0,  "deadline": 12, "items": [{"recipe": "burrito",    "quantity": 1, "modifiers": []},                       {"recipe": "chips_and_guac", "quantity": 1, "modifiers": []}]},
+    {"id": "O2", "customer": "Theo", "ticket": 102, "arrival": 0,  "deadline": 13, "items": [{"recipe": "bowl",       "quantity": 2, "modifiers": ["steak"]}]},
+    {"id": "O3", "customer": "Aiden", "ticket": 103, "arrival": 1,  "deadline": 14, "items": [{"recipe": "tacos",      "quantity": 1, "modifiers": []}]},
+    {"id": "O4", "customer": "Sofia", "ticket": 104, "arrival": 2,  "deadline": 15, "items": [{"recipe": "burrito",    "quantity": 1, "modifiers": ["veggie", "no_cheese"]}]},
+    {"id": "O5", "customer": "Luca", "ticket": 105, "arrival": 3,  "deadline": 16, "items": [{"recipe": "bowl",       "quantity": 1, "modifiers": ["veggie"]},              {"recipe": "chips_and_guac", "quantity": 1, "modifiers": ["salsa_instead"]}]},
+    {"id": "O6", "customer": "Priyanka", "ticket": 106, "arrival": 4,  "deadline": 18, "items": [{"recipe": "burrito",    "quantity": 2, "modifiers": []}]},
+    {"id": "O7", "customer": "Marcus", "ticket": 107, "arrival": 6,  "deadline": 20, "items": [{"recipe": "tacos",      "quantity": 1, "modifiers": ["steak"]}]},
+    {"id": "O8", "customer": "Elena", "ticket": 108, "arrival": 7,  "deadline": 21, "items": [{"recipe": "chips_and_guac", "quantity": 2, "modifiers": []}]},
+    {"id": "O9", "customer": "Noah", "ticket": 109, "arrival": 8,  "deadline": 22, "items": [{"recipe": "bowl",       "quantity": 1, "modifiers": ["veggie", "no_rice"]}]},
+    {"id": "O10", "customer": "Grace", "ticket": 110, "arrival": 10, "deadline": 24, "items": [{"recipe": "burrito",    "quantity": 1, "modifiers": ["sofritas", "no_beans"]}]},
+    {"id": "O11", "customer": "Omar", "ticket": 111, "arrival": 11, "deadline": 25, "items": [{"recipe": "bowl",       "quantity": 1, "modifiers": []},                       {"recipe": "burrito",    "quantity": 1, "modifiers": ["veggie"]}]},
+    {"id": "O12", "customer": "Hana", "ticket": 112, "arrival": 13, "deadline": 26, "items": [{"recipe": "tacos",      "quantity": 1, "modifiers": []}]},
+    {"id": "O13", "customer": "Diego", "ticket": 113, "arrival": 15, "deadline": 27, "items": [{"recipe": "chips_and_guac", "quantity": 1, "modifiers": []}]},
+    {"id": "O14", "customer": "Chloe", "ticket": 114, "arrival": 16, "deadline": 28, "items": [{"recipe": "bowl",       "quantity": 1, "modifiers": ["steak"]}]},
+    {"id": "O15", "customer": "Ravi", "ticket": 115, "arrival": 18, "deadline": 30, "items": [{"recipe": "burrito",    "quantity": 1, "modifiers": []}]},
+    {"id": "O16", "customer": "Zoe", "ticket": 116, "arrival": 20, "deadline": 30, "items": [{"recipe": "bowl",       "quantity": 1, "modifiers": ["veggie"]}]}
+  ],
+  "variants": {
+    "baseline": {
+      "description": "The full ten-person lunch crew stays available for the whole run."
+    },
+    "disruption": {
+      "description": "The grill cook steps away at minute 5; the kitchen manager is the grill-certified backup.",
+      "events": [{"tick": 5, "type": "worker_unavailable", "worker_id": "w_grill"}]
+    },
+    "blocker": {
+      "description": "Same disruption, but the kitchen manager is not grill certified, so remaining protein work is blocked.",
+      "worker_overrides": {"w_km": {"remove_skills": ["grill"]}},
+      "events": [{"tick": 5, "type": "worker_unavailable", "worker_id": "w_grill"}],
+      "expected_missing_skills": ["grill"]
+    }
+  }
+}
