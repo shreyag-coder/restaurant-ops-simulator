@@ -8,6 +8,14 @@ dashboard for inspecting the restaurant state and agent activity.
 Maintain one structured restaurant-state document containing everything
 needed to understand the restaurant at a given moment.
 
+> Implementation note (Nov 7, 2026): the state is a markdown file
+> (`world.md`) with structured JSON blocks, each agent keeps its own
+> markdown file, and a single orchestrator script replaces the backend
+> API. Agents propose actions through files; only the orchestrator
+> writes shared state. See PROJECT_PLAN.md. Wherever this brief says
+> "backend" or "JSON document", read "orchestrator" and "structured
+> blocks in world.md".
+
 Separate AI agents represent restaurant workers.
 
 Each agent:

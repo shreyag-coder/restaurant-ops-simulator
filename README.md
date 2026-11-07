@@ -1,6 +1,6 @@
 # Restaurant Operations Simulator
 
-A planned multi-agent restaurant simulator: four AI workers independently choose tasks through OpenRouter, while a Python backend validates actions, advances simulated time, and maintains one authoritative restaurant-state document.
+A planned multi-agent restaurant simulator: four AI workers independently choose tasks through OpenRouter. The workers communicate through plain markdown files, and one Python orchestrator script validates their proposals, advances simulated time, and is the only writer of the restaurant state.
 
 **Current status: planning only. No application code, dependencies, or deployment have been created.**
 
@@ -10,36 +10,45 @@ A planned multi-agent restaurant simulator: four AI workers independently choose
 - [Architecture, delivery plan, and acceptance criteria](PROJECT_PLAN.md)
 - [Two-person task assignments and checkpoints](TASKS.md)
 
+## Design in brief
+
+- No internal APIs and no server. State and communication live in text files.
+- `sim/world.md` is the authoritative restaurant state (clock, stations, ingredients, orders, tasks).
+- `sim/target.md` holds the shared goal and deadline.
+- `sim/agents/<name>.md` holds each worker's profile, skills, current task, and task history.
+- Each turn an agent reads the target, the world, and its own file, then writes a **proposal** to `sim/proposals/`. It never edits `world.md`.
+- `orchestrator.py` validates proposals one at a time, applies valid ones atomically, advances the clock, and appends to `sim/log/`, including a snapshot per tick for replay.
+
 ## Proposed technology
 
 | Component | Planned choice |
 |---|---|
-| Backend | Python 3.12, FastAPI, Pydantic, HTTPX |
-| Dashboard | React, TypeScript, Vite |
+| Orchestrator | Python 3.12 |
 | AI decisions | OpenRouter, strict JSON-schema responses |
+| State and messages | Markdown files with structured JSON blocks |
 | Tests | pytest and an explicitly selected deterministic worker policy |
-| Hosting | One Render Docker service serving the dashboard and API |
-| State and replay | One backend JSON state; exportable snapshots and decision/event history |
+| Inspection | Terminal summary or static page reading the files; optional dashboard later |
+| Replay | Snapshots and event log, no further model calls |
 
 ## Delivery estimates
 
 | Milestone | Estimate | Confidence |
 |---|---|---|
-| First hosted draft | 3 elapsed hours with two people; 6 person-hours | 60/100 |
+| First draft | 3 elapsed hours with two people; 6 person-hours | 60/100 |
 | Draft with contingency | 5 elapsed hours with two people; 10 person-hours | 85/100 |
-| Finalized hackathon demo | Additional 12–16 person-hours; approximately 1–2 working days | 85/100 |
+| Finalized demo | Additional 10–14 person-hours | 70/100 |
 
-Estimates assume accounts and API credits are ready before implementation starts and both contributors are familiar with their assigned stack and use AI coding assistance. Confidence scores are engineering judgments, not measured probabilities.
+Estimates assume OpenRouter credits are ready and both contributors use AI coding assistance. Confidence scores are engineering judgments, not measured probabilities.
 
 ## Ownership
 
-- **Person A:** simulation engine, API, tests, and deployment.
-- **Person B:** worker profiles, OpenRouter integration, dashboard, and replay interface.
+- **Person A:** orchestrator, world state, validation, simulated time, tests.
+- **Person B:** agent files and prompts, OpenRouter integration, replay and viewer.
 
-Contributor names and GitHub collaborator invitations remain unassigned. The detailed work split is in [TASKS.md](TASKS.md).
+Contributor names remain unassigned. The detailed split is in [TASKS.md](TASKS.md).
 
 ## Planned demonstration
 
-Complete ten orders within thirty simulated minutes, inspect worker decisions and resource reservations, make a worker unavailable, observe qualified reassignment, and replay the recorded run without further model calls.
+Complete ten orders within thirty simulated minutes, inspect worker decisions and resource reservations in the files, make a worker unavailable, observe qualified reassignment, and replay the recorded run without further model calls.
 
-The release target is a polished hackathon demo. Production persistence, multiple restaurants, and recipe editing are outside this release.
+The release target is a polished hackathon demo. A web dashboard, hosting, production persistence, multiple restaurants, and recipe editing are outside the core release.

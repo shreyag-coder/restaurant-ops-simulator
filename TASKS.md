@@ -1,72 +1,69 @@
 # Two-Person Delivery Tasks
 
-This is the implementation backlog, not a record of completed application work. All implementation tasks start unchecked. See [PROJECT_PLAN.md](PROJECT_PLAN.md) for contracts, behavior, tests, estimates, and release criteria.
+This is the implementation backlog, not a record of completed work. All tasks start unchecked. See [PROJECT_PLAN.md](PROJECT_PLAN.md) for the file layout, orchestrator behavior, prompts, and tests.
 
 ## Ownership and coordination
 
-- **Person A:** backend state, simulation engine, validation, API, engine tests, and deployment.
-- **Person B:** worker profiles/prompts, OpenRouter adapter, dashboard, and replay interface.
-- Use short-lived `feature/simulation-api` and `feature/agents-dashboard` branches. Integrate at the checkpoints below.
-- Agree the state fixture, API shapes, and agent adapter during the first 15 minutes. Person A owns later contract changes; Person B reviews them before integration.
-- Person B's agent adapter receives a state snapshot and worker profile and returns a validated proposal or explicit provider error. Person A wires it into the engine; the adapter never changes world state.
-- Keep credentials out of commits. Contributor GitHub usernames and collaborator invitations are not assigned by this document.
+- **Person A:** `orchestrator.py`, `world.md`/`target.md` structure, validation, reservations, simulated time, disruption, order verification, snapshots, and engine tests.
+- **Person B:** agent files and profiles, prompts, OpenRouter module, proposal parsing, decision recording, then viewer and replay.
+- Only the orchestrator writes `world.md`, agent files, and `log/`. Agents write only `proposals/<name>.md`.
+- Agree the file templates by reviewing one real example of `world.md`, one agent file, and one proposal in the first 15 minutes. Person A owns later format changes; Person B reviews them.
+- Use short-lived branches (`feature/engine`, `feature/agents`). Integrate at the checkpoints below.
+- Keep the API key in an environment variable and out of commits. No internal APIs or servers.
 
-## Three-hour draft schedule
+## Draft schedule (about 3 elapsed hours)
 
-The clock starts after repository setup, account access, and API-credit readiness. Two contributors work concurrently: three elapsed hours equals six person-hours.
+The clock starts once the repo, OpenRouter credits, and Python environment are ready.
 
 | Elapsed time | Person A | Person B | Checkpoint |
 |---|---|---|---|
-| 0–15 min | FastAPI skeleton, state/API contracts | React skeleton, agent adapter contract | Agree state fixture and interfaces |
-| 15–45 min | Dependencies, discrete clock, reservations | Dashboard fixture panels, OpenRouter adapter | One strict-schema AI action returned |
-| 45–80 min | Validation, completion, controls; initial Render deploy | Connect dashboard and controls | Hosted deterministic loop |
-| 80–115 min | Disruption, interrupted-task recovery, order verification | Integrate worker decisions and action results | Real AI starts and completes tasks |
-| 115–145 min | Snapshot recording/export, critical tests | JSON inspector, activity feed, basic replay slider | Inspectable replayable run |
-| 145–165 min | Merge, tests, engine/hosting fixes | Verify hosted panels and controls | Release candidate |
-| 165–180 min | Fresh-run/reset and release checks | Disruption demo and documentation | Verified `v0.1-draft` |
+| 0–15 min | Draft `world.md` and `target.md` templates | Draft agent file and proposal templates | Agree the file formats |
+| 15–60 min | Orchestrator loop, clock, validation, reservations (deterministic policy) | Four agent profiles, OpenRouter call with strict schema | One order completes; one AI proposal parsed |
+| 60–100 min | Completion, order verification, event log, snapshots | Connect model proposals to the loop, record decisions | Real AI starts and completes tasks |
+| 100–140 min | Ten-order scenario, disruption and interrupted-task recovery | Prompt tuning, wait/blocker handling, error handling | Baseline and disruption runs |
+| 140–170 min | Critical pytest scenarios, fixes | Replay mode and simple viewer | Inspectable, replayable run |
+| 170–180 min | Fresh-run and reset checks | Documentation | Verified `v0.1-draft` |
 
-If behind at minute 115, stop visual styling and convenience work. Do not weaken validation, fake backend state, silently replace AI decisions, or skip simulation timing to claim completion. Record any remaining acceptance gaps.
+If behind at minute 100, stop viewer and polish work. Do not weaken validation, hand-edit state to fake progress, silently replace AI decisions, or skip simulation timing. Record any remaining acceptance gaps.
 
 ## Person A — draft checklist
 
-- [ ] Establish state schema and representative shared fixture.
-- [ ] Seed two recipes, ten orders, ingredients, stations, and four profiles.
-- [ ] Build item-level dependency graphs plus order packing/verification.
-- [ ] Implement atomic validation, reservations, versioning, and action rejection.
-- [ ] Implement discrete-event time, proficiency durations, completion, and resource release.
-- [ ] Add start/pause/step/reset, stale-run protection, and state API.
-- [ ] Add baseline/disruption scenarios and worker-availability endpoint.
-- [ ] Implement interruption rollback and backend order verification.
+- [ ] Define `world.md` and `target.md` structure (structured JSON blocks plus prose) and a representative fixture.
+- [ ] Seed two recipes, ten orders, ingredients, stations, and four workers.
+- [ ] Build item-level dependency graphs plus order packing and verification.
+- [ ] Parse and strictly validate `world.md` and proposal files; reject malformed input.
+- [ ] Implement one-at-a-time validation, atomic reservations, versioning, and rejection with reasons.
+- [ ] Implement the discrete-event clock, proficiency durations, completion, and resource release.
+- [ ] Update agent files (current state, last result, history) from the orchestrator only.
+- [ ] Add start/pause/step/reset CLI commands and stale-proposal protection.
+- [ ] Add baseline and disruption scenarios with interruption rollback.
 - [ ] Add blockers, correctness/timeliness metrics, and terminal outcomes.
-- [ ] Wire Person B's adapter and an explicitly selected deterministic test policy into the engine.
-- [ ] Capture snapshots and export recordings.
-- [ ] Add critical pytest scenarios listed in the plan.
-- [ ] Build/deploy one authenticated Render service; retain one process/replica.
-- [ ] Verify a fresh hosted run after reset.
+- [ ] Append `log/events.md` and write per-tick snapshots.
+- [ ] Add deterministic test policy (explicitly selected) and critical pytest scenarios from the plan.
 
 ## Person B — draft checklist
 
-- [ ] Implement worker-specific prompts reflecting background and explicit capabilities.
-- [ ] Implement strict-schema OpenRouter calls, Pydantic-compatible action output, timeout/retry, and explicit errors.
+- [ ] Write four agent files with distinct backgrounds and explicit structured capabilities.
+- [ ] Write worker prompts that include the agent's background and capabilities.
+- [ ] Implement strict-schema OpenRouter calls with timeout, bounded retry, and explicit errors.
 - [ ] Verify a schema-response smoke test before integration.
-- [ ] Record model identity, action, short explanation, latency, and available usage metadata.
-- [ ] Build target/clock/progress, orders/tasks, stations, ingredients, and worker panels.
-- [ ] Show decisions, blockers, help requests, and accepted/rejected results.
-- [ ] Connect backend polling, start/pause/step/reset, and disruption controls.
+- [ ] Parse proposals into `proposals/<name>.md` and hand them to the orchestrator.
+- [ ] Record model identity, action, explanation, latency, and usage metadata.
 - [ ] Show AI/deterministic/replay mode and provider failures clearly.
-- [ ] Add full JSON inspector, run export, and recorded-snapshot replay slider.
-- [ ] Verify hosted baseline and disruption demonstrations.
-- [ ] Update documentation with actual setup and demonstration steps.
+- [ ] Build replay over `log/snapshots/` and `log/events.md` with no model calls.
+- [ ] Build a simple viewer (terminal summary or static page reading the files).
+- [ ] Verify baseline and disruption demonstrations.
+- [ ] Update documentation with actual setup and demo steps.
 
 ## Shared draft release gate
 
-- [ ] Hosted URL renders actual backend state.
+- [ ] A fresh run produces `world.md`, agent files, a log, and snapshots from the seed files.
 - [ ] Four distinct worker profiles independently choose recorded AI actions.
 - [ ] Concurrent tasks respect qualifications, dependencies, inventory, and station capacity.
-- [ ] Task durations and order correctness are engine-enforced.
+- [ ] Task durations and order correctness are enforced by the orchestrator.
 - [ ] Worker unavailability releases resources and supports qualified reassignment.
-- [ ] Controls and stale-response handling pass verification.
-- [ ] Exported recording can be inspected/replayed without model calls.
+- [ ] Pause, step, reset, and stale-proposal handling pass verification.
+- [ ] A recording can be replayed without model calls.
 - [ ] Critical tests pass; any omissions are explicitly documented.
 - [ ] Tag `v0.1-draft` after verification.
 
@@ -74,25 +71,25 @@ If behind at minute 115, stop visual styling and convenience work. Do not weaken
 
 | Work | Owner | Estimate |
 |---|---|---|
-| Expand engine/API tests and fix failures | Person A | 4–5 hours |
+| Expand engine tests and fix failures | Person A | 3–4 hours |
 | Prompt quality, repeated-wait handling, decision diagnostics | Person B | 2–3 hours |
-| Scenario selection, replay import/filtering, dashboard polish | Person B | 3–4 hours |
-| Clean setup/deployment verification, final demo, and handoff docs | Both | 3–4 total person-hours |
+| Scenario selection, replay filtering, viewer polish | Person B | 2–3 hours |
+| Fresh-setup verification, final demo, handoff docs | Both | 3–4 total person-hours |
 
 - [ ] Verify all original brief requirements against implemented behavior.
-- [ ] Validate read-only recording import and replay consistency.
 - [ ] Preserve baseline and disruption recordings.
-- [ ] Document ephemeral state, configuration, and failure behavior accurately.
-- [ ] Test the hosted demonstration from fresh setup.
-- [ ] Publish repository/URL handoff and a three-minute demonstration.
+- [ ] Document file formats, configuration, and failure behavior accurately.
+- [ ] Test the demo from a fresh clone.
+- [ ] Publish repository handoff and a three-minute demonstration.
 - [ ] Tag `v1.0-demo` after final acceptance.
+- [ ] Optional: web dashboard and hosting reading the same files.
 
 ## Estimates and confidence
 
 | Deliverable | Completion estimate | Confidence |
 |---|---|---|
-| Hosted first draft | 3 elapsed hours; 6 person-hours | 60/100 |
-| Hosted draft with contingency | 5 elapsed hours; 10 person-hours | 85/100 |
-| Finalized hackathon demo | Additional 12–16 person-hours; approximately 1–2 working days | 85/100 |
+| First draft | 3 elapsed hours; 6 person-hours | 60/100 |
+| Draft with contingency | 5 elapsed hours; 10 person-hours | 85/100 |
+| Finalized demo | Additional 10–14 person-hours | 70/100 |
 
-Confidence scores are engineering judgments, conditional on experience, AI coding assistance, ready accounts/API credits, and hosting/model availability. They are not measured probabilities or a claim that implementation is complete.
+Confidence scores are engineering judgments, conditional on experience, AI coding assistance, ready API credits, and model availability. They are not measured probabilities or a claim that implementation is complete.
