@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "workers": [
+    {
+      "id": "w_grill",
+      "name": "Dana",
+      "role": "Grill cook",
+      "description": "Experienced grill cook who can also prepare toppings, though more slowly than the prep specialist.",
+      "skills": {"grill": 1.0, "prep": 1.5}
+    },
+    {
+      "id": "w_prep",
+      "name": "Sam",
+      "role": "Prep specialist",
+      "description": "Preparation specialist who prepares toppings and can assemble burgers.",
+      "skills": {"prep": 1.0, "assemble": 1.0}
+    },
+    {
+      "id": "w_fry",
+      "name": "Riley",
+      "role": "Fry cook",
+      "description": "Runs the fryer and packs finished orders.",
+      "skills": {"fry": 1.0, "pack": 1.0}
+    },
+    {
+      "id": "w_expo",
+      "name": "Jordan",
+      "role": "Expediter",
+      "description": "Assembles, packs, and verifies orders for pickup. Cross-trained as the backup grill cook.",
+      "skills": {"assemble": 1.0, "pack": 1.0, "verify": 1.0, "grill": 1.0}
+    }
+  ]
+}

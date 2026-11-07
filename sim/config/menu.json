@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "ingredients": {
+    "patty":   {"name": "Beef patty",    "unit": "piece", "stock": 10,   "location": "cold storage"},
+    "bun":     {"name": "Burger bun",    "unit": "piece", "stock": 10,   "location": "bread shelf"},
+    "lettuce": {"name": "Lettuce",       "unit": "g",     "stock": 120,  "location": "cold storage"},
+    "cheese":  {"name": "Cheese slice",  "unit": "slice", "stock": 9,    "location": "cold storage"},
+    "potato":  {"name": "Cut potatoes",  "unit": "g",     "stock": 1650, "location": "freezer"},
+    "bag":     {"name": "Takeaway bag",  "unit": "piece", "stock": 12,   "location": "packing shelf"}
+  },
+  "stations": {
+    "grill":    {"name": "Grill",            "type": "grill",    "equipment": ["flat-top grill"],                "capacity": 2},
+    "prep":     {"name": "Prep counter",     "type": "prep",     "equipment": ["cutting board", "salad spinner"], "capacity": 2},
+    "assembly": {"name": "Assembly counter", "type": "assembly", "equipment": ["assembly counter"],              "capacity": 2},
+    "fryer":    {"name": "Fryer",            "type": "fryer",    "equipment": ["deep fryer"],                    "capacity": 1},
+    "packing":  {"name": "Packing counter",  "type": "packing",  "equipment": ["packing counter"],               "capacity": 1},
+    "pickup":   {"name": "Pickup pass",      "type": "pickup",   "equipment": ["pickup shelf", "order screen"],  "capacity": 1}
+  },
+  "recipes": {
+    "burger": {
+      "name": "Cheeseburger",
+      "item_prefix": "b",
+      "steps": [
+        {"id": "patty",    "name": "Grill patty",     "skill": "grill",    "station": "grill",    "minutes": 2, "ingredients": {"patty": 1},             "depends_on": []},
+        {"id": "toppings", "name": "Prepare lettuce", "skill": "prep",     "station": "prep",     "minutes": 1, "ingredients": {"lettuce": 20},          "depends_on": ["patty"]},
+        {"id": "assemble", "name": "Assemble burger", "skill": "assemble", "station": "assembly", "minutes": 1, "ingredients": {"bun": 1, "cheese": 1}, "depends_on": ["toppings"]}
+      ],
+      "modifiers": {
+        "no_lettuce":   {"label": "No lettuce",   "skip_steps": ["toppings"]},
+        "no_cheese":    {"label": "No cheese",    "set_ingredients": {"assemble": {"cheese": 0}}},
+        "extra_cheese": {"label": "Extra cheese", "set_ingredients": {"assemble": {"cheese": 2}}}
+      }
+    },
+    "fries": {
+      "name": "Fries",
+      "item_prefix": "f",
+      "steps": [
+        {"id": "fry", "name": "Fry potatoes", "skill": "fry", "station": "fryer", "minutes": 2, "ingredients": {"potato": 150}, "depends_on": []}
+      ],
+      "modifiers": {}
+    }
+  },
+  "order_steps": [
+    {"id": "pack",   "name": "Pack order",   "skill": "pack",   "station": "packing", "minutes": 1, "ingredients": {"bag": 1}, "depends_on": [],       "after_items": true},
+    {"id": "verify", "name": "Verify order", "skill": "verify", "station": "pickup",  "minutes": 1, "ingredients": {},         "depends_on": ["pack"]}
+  ]
+}
