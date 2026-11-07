@@ -4,7 +4,7 @@ Updated: November 7, 2026. This is a plan for future work, not a claim that anyt
 
 ## 1. Goal and loop
 
-Build a small, working multi-agent kitchen simulation in about 3 hours with two people using AI coding tools.
+Build a small, working multi-agent kitchen simulation using four coding agents with separate file ownership. The earlier three-hour estimate assumed two contributors; re-estimate after the first integrated order. Assignments and implementation prompts are in [TASKS.md](TASKS.md).
 
 - **JSON** for everything a program reads or writes: config, state, logs.
 - **Plain text** for what people and models read: worker personas and the generated report.
@@ -28,12 +28,17 @@ sim/
     events.jsonl           # append-only, one JSON event per line (decisions, accepts, rejects, starts, completions, blockers)
     snapshots/tNN.json     # state copy per tick, used by replay
     report.txt             # human-readable view, regenerated every tick
-orchestrator.py            # engine, policies, CLI
+orchestrator.py            # engine, authoritative state, CLI, integration
+scenario.py                # config loading/validation and pure task generation
+policies.py                # detached worker views and det/ai policies
 llm.py                     # OpenRouter call with strict JSON schema
-tests/test_engine.py       # pytest
+recording.py               # checkpoint helpers called only by orchestrator
+reporting.py               # pure text report rendering
+replay.py                  # read-only historical view
+tests/test_*.py            # separate tests owned by each coding agent
 ```
 
-Python 3.9+ standard library only (`urllib` for HTTP). pytest for tests. The API key comes from `OPENROUTER_API_KEY`; the model from `OPENROUTER_MODEL`.
+Python 3.9+ standard library only (`urllib` for HTTP). pytest for tests. The API key comes from `OPENROUTER_API_KEY`; the model from `OPENROUTER_MODEL`. Helpers run inside the orchestrator process; they do not add another service or state writer.
 
 ## 3. Engine rules
 
@@ -47,6 +52,7 @@ Python 3.9+ standard library only (`urllib` for HTTP). pytest for tests. The API
 - **Reservation (atomic):** starting a task takes the worker, one station slot, and its ingredients (`available → reserved`) together, or nothing.
 - **Completion:** consumes reserved ingredients, frees the station and worker, appends to the worker's history.
 - **Ingredient record:** `{"available": n, "reserved": n}` per ingredient.
+- **Boundary ordering:** disruption precedes completion, as specified in the tick loop. A task belonging to the disrupted worker is interrupted even when its finish time is that tick. At the deadline tick, process due completions and verification before deciding completed/timed-out; start no new work at the deadline.
 
 ## 4. Actions
 
@@ -73,6 +79,7 @@ The orchestrator also **detects blockers itself**: a ready task with no availabl
   - `det`: a fixed rule (earliest deadline first; prefer tasks where I'm the fastest; otherwise any feasible task). Used for tests and the baseline.
   - `ai`: persona text as the system prompt, the view as the user message, a strict JSON schema `{action, task_id, why}`, and one retry. If it still fails, the run is set to `paused` with the error shown; it never silently switches to `det`.
 - Every decision event records the worker, mode, model, proposal, latency, and result.
+- The provider's one retry is separate from the one re-ask after an action conflict. The policy returns proposal/metadata; only the engine validates, records, and changes state. Deterministic ties use task ID after deadline and fastest-worker preference. Full function boundaries and field requirements are in TASKS.md.
 
 ## 6. Disruption and order verification
 
@@ -92,28 +99,29 @@ python orchestrator.py replay [--run ID] [--at T]            # print events / sn
 - **Step / pause:** use `--max-ticks 1`, then `resume`.
 - **Reset:** start a new `run`; old runs stay in `sim/runs/`.
 - **View:** `report.txt` shows target, time, orders and task status, stations, stock, workers, the latest decisions, and blockers. The full state is in `state.json`.
+- **Resume boundary:** save frozen run inputs, applied-event markers, committed event sequence, and an explicit continuation position. Resume must not reapply accepted actions, disruption, or completion, including after a mid-tick AI error. Detect incomplete checkpoints and prevent concurrent writers for one run. Replay reads committed snapshots/events without invoking policies or writing files.
 
-## 8. Two-person 3-hour schedule
+## 8. Four-agent delivery workflow
 
-- **Person A — engine:** `orchestrator.py` engine, config files, validation, clock, disruption, verification, snapshots, tests.
-- **Person B — agents and visibility:** personas, `llm.py`, AI policy, decision logging, report, replay, docs.
+These are coding agents implementing the application, separate from the four simulated workers. Detailed checklists, interfaces, and copyable prompts are in [TASKS.md](TASKS.md).
 
-| Minutes | Person A | Person B | Checkpoint |
-|---|---|---|---|
-| 0–20 | `menu.json`, `scenario.json`, state shape | `workers.json`, personas, view and proposal shape | Formats agreed from one real example of each |
-| 20–60 | Task generation, validation, reservations, clock, completion (`det` mode) | `llm.py` with strict schema, one smoke call | **60:** one order completes in `det`; one valid AI proposal parsed |
-| 60–120 | 10 orders, verification, disruption, blockers, events + snapshots | Plug the AI policy into the loop, re-ask round, paused-on-error | **120:** full baseline in `det` and `ai`; disruption run works |
-| 120–160 | Tests from §9, fixes | `report.txt`, `replay`, `resume` | Runs are inspectable and replayable |
-| 160–180 | Fresh-clone run of all three variants | README setup and demo steps | Tag `v0.1-draft` |
+| Agent | Ownership | First deliverable |
+|---|---|---|
+| 1 — engine/integration | `orchestrator.py`, state, validation, time, disruption, CLI, engine/CLI tests | One order completes correctly through the real engine |
+| 2 — scenarios/tasks | `sim/config/*.json`, `scenario.py`, scenario tests | Valid config and expanded tasks for one modified multi-quantity order |
+| 3 — worker decisions | `policies.py`, `llm.py`, personas, policy/provider tests | Repeatable deterministic proposal and strictly parsed AI response |
+| 4 — inspection/recording | `recording.py`, `reporting.py`, `replay.py`, their tests, README | Report and read-only replay from an agreed saved state |
 
-**If behind at minute 120,** cut in this order: `replay --at` (keep the event printout), `request_help`, report polish. Never cut validation, simulated time, or honest AI logging.
+Only Agent 1 edits the orchestrator. Agent 2 owns worker JSON; Agent 3 owns matching persona text. Each agent owns separate test files. Agent 4 supplies recording helpers, but only the orchestrator process invokes writers.
 
-### Prompts for the coding tool
+### Dependency checkpoints
 
-1. *(A)* "Read BRIEF.md and PROJECT_PLAN.md §2–§4. Implement the engine in `orchestrator.py` with the `det` policy, config in `sim/config/`, standard library only, Python 3.9. Run one order to completion and show events.jsonl."
-2. *(B)* "Implement `llm.py` per PROJECT_PLAN.md §5: OpenRouter, strict JSON schema, timeout, one retry, error raised. Add the `ai` policy using personas and per-worker views. Run the baseline in `ai` mode."
-3. *(A)* "Add the 10-order scenario, the disruption and blocker variants, verification, and the metrics from §6. Add the pytest checks from §9."
-4. *(B)* "Add `report.txt`, `replay`, and `resume` per §7. Update the README with setup and demo steps."
+1. Share one config/order/task example (Agent 2), state/event/checkpoint example (Agent 1), view/proposal example (Agent 3), and rendered report (Agent 4). Start independent work against these small examples.
+2. Integrate config/task generation with the engine, then the deterministic policy; complete one order before expanding to ten.
+3. Connect real AI decisions, disruption/blocker variants, and recording/reporting. Preserve explicit provider failures and resource validation.
+4. Verify resume/replay and all §9 checks; document fresh setup and actual baseline/disruption/blocker outcomes. Record a real AI run separately from offline tests.
+
+Re-estimate after checkpoint 2. If behind, reduce report polish, optional help actions, and exact-tick replay convenience before changing correctness or timing. Keep event inspection, honest AI logging, and explicit remaining gaps.
 
 ## 9. Verification (pytest + manual)
 
@@ -125,6 +133,9 @@ python orchestrator.py replay [--run ID] [--at T]            # print events / sn
 6. Modifiers: `no_lettuce` skips toppings; `no_cheese` uses no cheese.
 7. The `det` baseline is repeatable: two runs produce identical event sequences, ignoring timestamps.
 8. Replay reads snapshots and events with no model calls.
+9. Step/resume matches an uninterrupted deterministic run; no repeated disruption, task completion, or event sequence. Provider-error pause preserves continuation state.
+10. `no_lettuce` rewires dependencies; `extra_cheese` uses the configured quantity; contradictory/unknown modifiers are rejected. Verify requested quantities/modifiers against produced items, not only task statuses.
+11. Recordings use committed state/event boundaries; replay is read-only and resume rejects incomplete checkpoints or an already active writer.
 
 A tool saying "done" is not evidence. Check tests, `events.jsonl`, and `report.txt`.
 
@@ -140,4 +151,4 @@ Web dashboard (it can read the same JSON files), hosting, per-task proficiency b
 | Draft with contingency | 4.5 elapsed hours | 90/100 |
 | Polished demo (web dashboard, prompt tuning, recordings) | +6–10 person-hours | 70/100 |
 
-These are engineering judgments, not measurements. Re-estimate at the 60-minute checkpoint.
+These are historical two-contributor engineering estimates, not measurements or a new four-agent schedule. Re-estimate after the first integrated order.

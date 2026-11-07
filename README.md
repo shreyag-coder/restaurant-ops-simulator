@@ -8,7 +8,7 @@ A planned multi-agent restaurant simulator. Four AI workers independently choose
 
 - [Original requirements](BRIEF.md)
 - [Architecture, rules, schedule, and verification](PROJECT_PLAN.md)
-- [Two-person checklist](TASKS.md)
+- [Four-agent assignments, handoffs, and implementation prompts](TASKS.md)
 
 ## Design in brief
 
@@ -51,8 +51,12 @@ Estimates are engineering judgments, not measurements.
 
 ## Ownership
 
-- **Person A:** engine, config, validation, simulated time, disruption, tests.
-- **Person B:** personas, OpenRouter integration, report, replay, docs.
+- **Agent 1:** engine, authoritative state, CLI, and integration.
+- **Agent 2:** scenario config, validation, and recipe task generation.
+- **Agent 3:** worker personas, decision policies, and OpenRouter.
+- **Agent 4:** recording helpers, reports, replay, and setup documentation.
+
+These are four coding assignments, separate from the four simulated workers. Only Agent 1 edits `orchestrator.py`; helpers use ordinary imports and the orchestrator remains the only state writer. Each agent owns separate files and tests; see TASKS.md. The estimates above retain their original two-contributor assumptions and should be revisited after the first integrated order.
 
 ## Planned demonstration
 
