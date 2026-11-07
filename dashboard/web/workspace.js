@@ -124,6 +124,9 @@ conversationMessages = function (state, events) {
   const typed = new Set(events.filter(e => e.type === 'operator_command' && e.payload?.command?.type === 'announce')
     .map(e => e.payload.command.text));
   const said = new Set(events.filter(e => e.type === 'operator_command').map(e => e.payload?.text));
+  // Announcements the scenario agent added to an update already appear under that update's bubble.
+  const agentSaid = command => (command.payload?.changes || []).filter(c => c.type === 'announce' && c.text).map(c => c.text);
+  for (const e of events) if (e.type === 'operator_command') agentSaid(e).forEach(text => typed.add(text));
   const station = id => state.stations[id]?.name || title(id);
   const ingredient = id => state.ingredients[id]?.name || title(id);
   const person = id => state.workers[id]?.name || id;
@@ -135,8 +138,10 @@ conversationMessages = function (state, events) {
         const message = p.free_text ?? (p.command?.type === 'announce');
         const said = p.interpreted_by ? p.text : (message ? p.command?.text || p.text : p.text);
         const refused = (p.rejected || []).length ? ` · couldn't apply: ${p.rejected.join('; ')}` : '';
+        const told = message ? [] : agentSaid(event).filter(text => text !== said);
+        const toldText = told.length ? ` · told the team: “${told.join('” “')}”` : '';
         return [{...b, kind: 'manager', text: said, label: message ? 'Message to the team' : 'Kitchen update',
-          detail: (message ? 'Shared with every worker' : p.description) + refused}];
+          detail: (message ? 'Shared with every worker' : p.description) + toldText + refused}];
       }
       case 'announcement':
         return typed.has(p.text) ? [] : [{...b, kind: 'manager', text: p.text, label: 'Announcement'}];
